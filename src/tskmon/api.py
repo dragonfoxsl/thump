@@ -15,8 +15,9 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request, Response
 
 from tskmon.config import Config
-from tskmon.models import Event
-from tskmon.store.base import Store
+from tskmon.evaluator import evaluate
+from tskmon.models import Event, State
+from tskmon.store.base import Store, StoreUnavailable
 
 MAX_BODY_BYTES = 4096
 
@@ -62,5 +63,52 @@ def build_app(config: Config, store: Store, clock: Clock = _utcnow) -> FastAPI:
             check.name, now, Event(at=now, kind="fail", detail=await _detail(request)), check.history
         )
         return Response(content="ok", media_type="text/plain")
+
+    def _plain(state: State) -> Response:
+        # Unauthenticated. Leaks NOTHING: no JSON, no names, no timestamps.
+        healthy = state is not State.DOWN
+        return Response(
+            content="up" if healthy else "down",
+            status_code=200 if healthy else 503,
+            media_type="text/plain",
+        )
+
+    @app.get("/status/{name}")
+    async def status_one(name: str) -> Response:
+        check = config.by_name.get(name)
+        if check is None:
+            raise HTTPException(status_code=404, detail="not found")
+        try:
+            state = await store.get_state(name)
+        except StoreUnavailable:
+            # Fail LOUD. Reporting "all clear" while blind is the worst bug
+            # this system can have.
+            return Response(content="down", status_code=503, media_type="text/plain")
+        return _plain(evaluate(check, state, clock()))
+
+    @app.get("/status")
+    async def status_all() -> Response:
+        names = [c.name for c in config.checks]
+        try:
+            states = await store.get_states(names)
+        except StoreUnavailable:
+            return Response(content="down", status_code=503, media_type="text/plain")
+
+        now = clock()
+        down = any(
+            evaluate(c, states[c.name], now) is State.DOWN for c in config.checks
+        )
+        return _plain(State.DOWN if down else State.UP)
+
+    @app.get("/healthz")
+    async def healthz() -> Response:
+        # The check ON THE CHECKER. Deliberately NOT /status: a genuinely-dead
+        # backup job must never cause k8s to kill the monitor reporting it.
+        ok = await store.healthy()
+        return Response(
+            content="ok" if ok else "store unavailable",
+            status_code=200 if ok else 503,
+            media_type="text/plain",
+        )
 
     return app
