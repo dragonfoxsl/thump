@@ -6,20 +6,22 @@ SQLite-shaped.
 
 from datetime import datetime, timedelta, timezone
 
+import fakeredis.aioredis
 import pytest
 
 from tskmon.models import Event
+from tskmon.store.redis import RedisStore
 from tskmon.store.sqlite import SqliteStore
 
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
 
-@pytest.fixture(params=["sqlite"])
+@pytest.fixture(params=["sqlite", "redis"])
 async def store(request, tmp_path):
     if request.param == "sqlite":
         s = SqliteStore(str(tmp_path / "state.db"))
-    else:  # pragma: no cover - added in Task 6
-        raise AssertionError(f"unknown store {request.param}")
+    else:
+        s = RedisStore("redis://localhost:6379/0", client=fakeredis.aioredis.FakeRedis())
     await s.connect()
     yield s
     await s.close()
