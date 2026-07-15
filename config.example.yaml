@@ -1,0 +1,31 @@
+store:
+  driver: sqlite              # sqlite | redis
+  dsn: /var/lib/tskmon/state.db
+  # For multi-replica Kubernetes, use Redis — SQLite silently breaks
+  # correctness across replicas:
+  # driver: redis
+  # dsn: redis://redis:6379/0
+
+server:
+  listen: ":8080"
+  secret: ${TSKMON_SECRET}              # HMAC root for derived ping tokens
+  admin_token: ${TSKMON_ADMIN_TOKEN}    # omit to DISABLE /checks and /metrics
+  timezone: UTC                         # display only; never affects evaluation
+
+defaults:
+  grace: 5m
+  timeout: 10s
+  history: 100
+  failure_threshold: 2
+
+checks:
+  - name: nightly-db-backup
+    type: heartbeat
+    interval: 24h
+    grace: 1h
+
+  - name: internal-payments-api
+    type: probe
+    url: http://payments.internal:8080/healthz
+    interval: 60s
+    expect_status: 200
