@@ -113,6 +113,43 @@ async def test_probe_records_an_event(store):
     assert "500" in events[0].detail
 
 
+class _ExplodingStore:
+    """Wraps a real store but raises a plain (non-StoreUnavailable) exception
+    from record_success/record_failure, simulating an unexpected bug in the
+    store layer that is NOT the "store is down" case."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    async def record_success(self, *args, **kwargs):
+        raise RuntimeError("boom: unexpected bug, not a StoreUnavailable case")
+
+    async def record_failure(self, *args, **kwargs):
+        raise RuntimeError("boom: unexpected bug, not a StoreUnavailable case")
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+async def test_run_survives_unexpected_non_store_error_and_still_cancels(store):
+    cfg = parse_config(YAML, ENV)
+    sched = Scheduler(
+        cfg, store, client_returning(200), clock=lambda: T0
+    )
+    sched._store = _ExplodingStore(store)
+
+    task = asyncio.create_task(sched.run())
+    await asyncio.sleep(0.05)  # let a tick raise RuntimeError inside _loop
+
+    # The task must still be running: the unexpected error must not have
+    # propagated out of _loop and torn down the TaskGroup in run().
+    assert not task.done()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
 async def test_run_probes_only_probe_checks_and_stops_on_cancel(store):
     cfg = parse_config(YAML, ENV)
     sched = Scheduler(cfg, store, client_returning(200), clock=lambda: T0)

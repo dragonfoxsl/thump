@@ -70,6 +70,11 @@ class Scheduler:
                 # Do not kill the loop: /healthz already reports the store, and
                 # k8s will restart us. Keep trying.
                 log.error("probe %s: store unavailable: %s", check.name, e)
+            except Exception:
+                # Never let one check's unexpected failure tear down the whole
+                # TaskGroup (and thus every other probe loop) via run(). Log and
+                # keep retrying on the next tick instead of failing open.
+                log.exception("probe %s: unexpected error", check.name)
             await asyncio.sleep(check.interval.total_seconds())
 
     async def run(self) -> None:
