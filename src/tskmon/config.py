@@ -96,6 +96,21 @@ def _duration(raw: dict[str, Any], key: str, default: timedelta, errors: list[st
         return default
 
 
+def _int(raw: dict[str, Any], key: str, default: int, errors: list[str], where: str) -> int:
+    if key not in raw:
+        return default
+    value = raw[key]
+    # bool is a subclass of int; `history: true` must not silently become 1.
+    if isinstance(value, bool):
+        errors.append(f"{where}: {key} must be an integer, got {value!r}")
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        errors.append(f"{where}: {key} must be an integer, got {value!r}")
+        return default
+
+
 def parse_config(text: str, env: Mapping[str, str]) -> Config:
     errors: list[str] = []
     expanded = _expand_env(text, env, errors)
@@ -131,8 +146,8 @@ def parse_config(text: str, env: Mapping[str, str]) -> Config:
     d = doc.get("defaults") or {}
     def_grace = _duration(d, "grace", timedelta(minutes=5), errors, "defaults.grace")
     def_timeout = _duration(d, "timeout", timedelta(seconds=10), errors, "defaults.timeout")
-    def_history = int(d.get("history", 100))
-    def_threshold = int(d.get("failure_threshold", 2))
+    def_history = _int(d, "history", 100, errors, "defaults.history")
+    def_threshold = _int(d, "failure_threshold", 2, errors, "defaults.failure_threshold")
 
     checks: list[Check] = []
     seen: set[str] = set()
@@ -172,12 +187,12 @@ def parse_config(text: str, env: Mapping[str, str]) -> Config:
                 interval=interval,
                 grace=_duration(raw, "grace", def_grace, errors, where),
                 timeout=_duration(raw, "timeout", def_timeout, errors, where),
-                history=int(raw.get("history", def_history)),
-                failure_threshold=int(raw.get("failure_threshold", def_threshold)),
+                history=_int(raw, "history", def_history, errors, where),
+                failure_threshold=_int(raw, "failure_threshold", def_threshold, errors, where),
                 token=str(raw.get("token") or derive_token(server.secret, str(name))),
                 enabled=bool(raw.get("enabled", True)),
                 url=str(url) if url else None,
-                expect_status=int(raw.get("expect_status", 200)),
+                expect_status=_int(raw, "expect_status", 200, errors, where),
             )
         )
 

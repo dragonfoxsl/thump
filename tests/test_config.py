@@ -163,3 +163,26 @@ checks:
     with pytest.raises(ConfigError) as exc:
         parse_config(text, ENV)
     assert len(exc.value.errors) == 2  # bad driver AND probe-without-url
+
+
+def test_malformed_integer_field_is_fatal_not_a_crash():
+    text = MINIMAL + "    history: many\n"
+    with pytest.raises(ConfigError) as exc:
+        parse_config(text, ENV)
+    assert any("history" in e for e in exc.value.errors)
+
+
+def test_malformed_integer_is_collected_with_other_errors():
+    # A bad driver AND a bad integer must report together — not crash on the first.
+    text = MINIMAL.replace("driver: sqlite", "driver: mongodb") + "    history: lots\n"
+    with pytest.raises(ConfigError) as exc:
+        parse_config(text, ENV)
+    assert len(exc.value.errors) == 2
+
+
+def test_boolean_is_rejected_as_integer():
+    # YAML `true` becomes Python True (an int subclass); silently accepting it
+    # as history=1 would be a latent bug.
+    text = MINIMAL + "    failure_threshold: true\n"
+    with pytest.raises(ConfigError):
+        parse_config(text, ENV)
