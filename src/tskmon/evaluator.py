@@ -22,7 +22,12 @@ def evaluate(check: Check, state: CheckState, now: datetime) -> State:
     if check.type is CheckType.HEARTBEAT:
         if state.last_result_ok is False:
             return State.DOWN
-        assert state.last_seen is not None  # implied by last_result_ok is True
+        if state.last_seen is None:
+            # last_result_ok is True but no sighting recorded: an impossible
+            # state from any real Store. Fail loud rather than compute against None.
+            raise ValueError(
+                f"check {check.name!r}: last_result_ok is True but last_seen is None"
+            )
         if now - state.last_seen > check.interval + check.grace:
             return State.DOWN
         return State.UP

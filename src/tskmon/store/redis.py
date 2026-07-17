@@ -6,21 +6,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import datetime
 
 import redis.asyncio as aioredis
 from redis.exceptions import RedisError
 
 from tskmon.models import CheckState, Event
 from tskmon.store.base import StoreUnavailable
-
-
-def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat()
-
-
-def _parse(s: str | None) -> datetime | None:
-    return datetime.fromisoformat(s).astimezone(timezone.utc) if s else None
+from tskmon.store.serde import iso, parse_dt
 
 
 class RedisStore:
@@ -82,7 +75,7 @@ class RedisStore:
                 continue
             ok_raw = raw.get("last_result_ok")
             out[name] = CheckState(
-                last_seen=_parse(raw.get("last_seen") or None),
+                last_seen=parse_dt(raw.get("last_seen") or None),
                 last_result_ok=None if ok_raw in (None, "") else ok_raw == "1",
                 consecutive_failures=int(raw.get("consecutive_failures", 0)),
             )
@@ -91,7 +84,7 @@ class RedisStore:
     async def _push_event(self, pipe: aioredis.client.Pipeline, name: str, event: Event, history: int) -> None:
         pipe.lpush(
             self._key_events(name),
-            json.dumps({"at": _iso(event.at), "kind": event.kind, "detail": event.detail}),
+            json.dumps({"at": iso(event.at), "kind": event.kind, "detail": event.detail}),
         )
         pipe.ltrim(self._key_events(name), 0, history - 1)
 
@@ -100,7 +93,7 @@ class RedisStore:
             pipe = self._db().pipeline()
             pipe.hset(
                 self._key_state(name),
-                mapping={"last_seen": _iso(at), "last_result_ok": "1", "consecutive_failures": 0},
+                mapping={"last_seen": iso(at), "last_result_ok": "1", "consecutive_failures": 0},
             )
             await self._push_event(pipe, name, event, history)
             await pipe.execute()
@@ -126,7 +119,8 @@ class RedisStore:
         out: list[Event] = []
         for raw in raws:
             d = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
-            at = _parse(d["at"])
-            assert at is not None
+            at = parse_dt(d["at"])
+            if at is None:
+                raise StoreUnavailable(f"stored event for {name!r} has no timestamp")
             out.append(Event(at=at, kind=d["kind"], detail=d.get("detail", "")))
         return out

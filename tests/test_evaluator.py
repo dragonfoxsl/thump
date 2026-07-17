@@ -1,7 +1,5 @@
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
 from tskmon.evaluator import evaluate
 from tskmon.models import Check, CheckState, CheckType, State
 
