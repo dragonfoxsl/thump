@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
+from tskmon.schedule import CronSchedule
+
 
 class State(StrEnum):
     UP = "up"
@@ -21,7 +23,9 @@ class CheckType(StrEnum):
 class Check:
     name: str
     type: CheckType
-    interval: timedelta
+    # Exactly one of `interval` or `schedule` drives a heartbeat's deadline;
+    # config enforces this. Probes always use `interval` as a poll frequency.
+    interval: timedelta | None
     grace: timedelta
     timeout: timedelta
     history: int
@@ -30,6 +34,7 @@ class Check:
     enabled: bool = True
     url: str | None = None
     expect_status: int = 200
+    schedule: CronSchedule | None = None
 
 
 @dataclass(frozen=True, slots=True)
