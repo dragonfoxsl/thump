@@ -1,36 +1,155 @@
-# thump
+<!-- Drop a banner at assets/logo.png and uncomment:
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dragonfoxsl/thump/main/assets/logo.png" alt="thump" width="520"/>
+</p>
+-->
 
-Uptime vendors can only ping public endpoints. That leaves two blind spots:
+<h1 align="center">thump</h1>
 
-- **Cron jobs.** A nightly backup that never runs has no endpoint to poll. Nothing is
-  "down" — the job simply didn't happen, on a host that is otherwise healthy.
-- **Private instances.** A service on `10.0.x.x` cannot be reached from the internet.
+<p align="center">
+  <a href="https://github.com/dragonfoxsl/thump/actions/workflows/ci.yml">
+    <img src="https://github.com/dragonfoxsl/thump/actions/workflows/ci.yml/badge.svg" alt="CI"/>
+  </a>
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+"/>
+  <img src="https://img.shields.io/badge/uv-package%20manager-DE5FE9?logo=python&logoColor=white" alt="uv package manager"/>
+  <img src="https://img.shields.io/badge/FastAPI-server-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
+  <img src="https://img.shields.io/badge/SQLite%20%7C%20Redis-storage-003B57?logo=sqlite&logoColor=white" alt="SQLite or Redis"/>
+  <img src="https://img.shields.io/badge/pytest-137%20tests-0A9EDC?logo=pytest&logoColor=white" alt="pytest"/>
+  <img src="https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker multi-arch"/>
+</p>
 
-`thump` runs *inside* your network, accepts heartbeats from cron jobs, probes private
-endpoints, and re-exposes both as plain `200`/`503` URLs your existing uptime vendor
-already knows how to poll. It does the seeing; your vendor keeps doing the paging.
+<p align="center">
+  <a href="https://ko-fi.com/D5X721S5GY">
+    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi"/>
+  </a>
+</p>
 
-## Quick start
+<br>
 
-```sh
-docker run -e THUMP_SECRET=$(openssl rand -hex 32) \
-  -v ./config.yaml:/etc/thump/config.yaml:ro -p 8080:8080 ghcr.io/dragonfoxsl/thump
+**thump** is a self-hosted monitor for the things your uptime vendor cannot see — cron jobs that silently never ran, and services on private networks it cannot reach. It runs *inside* your network, accepts heartbeats, probes private endpoints, and re-exposes both as plain `200`/`503` URLs your existing vendor already knows how to poll. It does the seeing; your vendor keeps doing the paging.
+
+```bash
+curl -fsS https://mon.example.com/ping/<token>   # cron checks in
+curl      https://mon.example.com/status/backup  # 200 or 503, for your vendor
 ```
 
-Add a heartbeat to a cron job — the URL is the credential, so there is nothing else to
-plumb in:
+---
 
-```sh
+## The two blind spots
+
+| Blind spot | Why a vendor misses it | What thump does |
+|---|---|---|
+| **Cron jobs** | A nightly backup that never runs has no endpoint to poll. Nothing is "down" — the job simply didn't happen, on a host that is otherwise healthy. | Dead man's switch. The job checks in; silence past its deadline is the alert. |
+| **Private instances** | A service on `10.0.x.x` cannot be reached from the internet at all. | Probes it from inside the VPC and republishes the result on a public status URL. |
+
+## Check types
+
+| Type | Deadline is | Goes down when | Requires |
+|---|---|---|---|
+| `heartbeat` | `interval` (a duration) | nothing pinged within `interval + grace` | one of `interval` / `schedule` |
+| `heartbeat` | `schedule` (a cron expression) | the most recent occurrence whose `grace` expired went uncovered | `server.timezone` |
+| `probe` | — | `failure_threshold` consecutive probe failures | `url`, `interval` |
+
+> A probe is never marked down because time passed — only because probes actually
+> failed. Time-based death is the heartbeat's job.
+
+## Requirements
+
+Nothing but a container runtime for normal use. Python 3.12+ and [uv](https://docs.astral.sh/uv/) if you run it from source.
+
+| Optional | Without it |
+|---|---|
+| Redis | SQLite is used. Fine for one replica; **silently wrong** across several — see Operational notes |
+| `admin_token` | `/checks` and `/metrics` are **disabled**, not open |
+
+## Installation
+
+### With Docker (recommended)
+
+```bash
+docker run -e THUMP_SECRET=$(openssl rand -hex 32) \
+  -v ./config.yaml:/etc/thump/config.yaml:ro \
+  -p 8080:8080 ghcr.io/dragonfoxsl/thump
+```
+
+Images are published for `linux/amd64` and `linux/arm64`.
+
+### From source
+
+```bash
+git clone https://github.com/dragonfoxsl/thump
+cd thump
+uv sync
+THUMP_SECRET=$(openssl rand -hex 32) THUMP_CONFIG=./config.yaml uv run python -m thump.main
+```
+
+### Development install
+
+```bash
+uv sync --extra dev
+uv run pytest
+```
+
+## Usage
+
+### Step 1: Declare your checks
+
+```yaml
+store:
+  driver: sqlite                     # or: redis
+  dsn: /var/lib/thump/state.db
+server:
+  listen: ":8080"
+  secret: ${THUMP_SECRET}
+  timezone: Europe/London            # cron expressions are evaluated here
+
+checks:
+  - name: nightly-backup
+    type: heartbeat
+    schedule: "0 2 * * *"            # 02:00 local, daily
+    grace: 30m
+
+  - name: internal-payments-api
+    type: probe
+    url: http://payments.internal:8080/healthz
+    interval: 60s
+```
+
+Invalid config is fatal at boot. A monitor that starts half-configured and silently fails to watch something is worse than one that refuses to start: the first failure mode is invisible, the second is a `CrashLoopBackOff` noticed in thirty seconds.
+
+### Step 2: Have cron check in
+
+The URL is the credential, so there is nothing else to plumb in:
+
+```bash
 0 2 * * * /opt/backup.sh && curl -fsS https://mon.example.com/ping/<token> \
                         || curl -fsS https://mon.example.com/ping/<token>/fail
 ```
 
-Then point one upstream monitor per check at `https://mon.example.com/status/<name>`, so
-the page you get at 3am says *which* check tripped.
+Get a token from `/checks`, or derive it yourself — `HMAC-SHA256(secret, check_name)`, first 32 hex chars.
 
-Get a check's token from `/checks` (requires `admin_token`; set `THUMP_ADMIN_TOKEN` and
-uncomment `admin_token` in `config.yaml` to enable it — it's disabled by default), or
-derive it yourself: `HMAC-SHA256(secret, check_name)`, first 32 hex chars.
+### Step 3: Point your vendor at it
+
+One upstream monitor per check, at `https://mon.example.com/status/<name>`, so the page you get at 3am says *which* check tripped.
+
+## Scheduling a heartbeat
+
+A heartbeat's deadline is either a duration or a cron expression. They are mutually exclusive — setting both, or neither, is a config error.
+
+```yaml
+  - name: weekday-report
+    type: heartbeat
+    schedule: "0 6 * * 1-5"
+    grace: 30m
+```
+
+Prefer `schedule` for anything driven by cron. `interval: 24h` measures 24 hours from the *last ping*, which fails three ways:
+
+| Failure | Detail |
+|---|---|
+| The deadline drifts | Anchored to when the job was last *seen*, not when it was *due*, so ordinary jitter walks the window forward until a healthy job pages you |
+| DST breaks it | A fixed 24h interval is wrong by an hour on both transitions, in opposite directions |
+| Real schedules don't fit | `0 2 * * 1-5` has no single interval — Friday→Monday is 72h, every other gap is 24h |
 
 ## Endpoints
 
@@ -44,94 +163,72 @@ derive it yourself: `HMAC-SHA256(secret, check_name)`, first 32 hex chars.
 | `GET /metrics` | bearer | Prometheus |
 | `GET /healthz` | none | liveness — the check on the checker |
 
-`/status` is unauthenticated because your vendor must reach it, and therefore leaks
-nothing: the body is literally `up` or `down`. Internal topology lives behind the bearer
-token. If `admin_token` is unset, `/checks` and `/metrics` are **disabled**, not open.
-
-## Scheduling a heartbeat
-
-A heartbeat's deadline can be a duration or a cron expression:
-
-```yaml
-server:
-  timezone: Europe/London     # cron expressions are evaluated here
-
-checks:
-  - name: nightly-backup
-    type: heartbeat
-    schedule: "0 2 * * *"     # 02:00 local, every day
-    grace: 30m
-```
-
-`interval` and `schedule` are mutually exclusive on a heartbeat — setting both, or
-neither, is a config error. Probes always use `interval`, as a poll frequency.
-
-Prefer `schedule` for anything driven by cron. `interval: 24h` measures 24 hours from
-the *last ping*, so ordinary jitter walks the deadline forward until a healthy job
-pages you; it is wrong by an hour on both DST transitions; and it cannot express
-`0 2 * * 1-5` at all, because the Friday→Monday gap is 72 hours while every other gap
-is 24.
-
-A check with `schedule` is DOWN when the most recent occurrence whose grace has
-expired was not covered by a ping.
+`/status` is unauthenticated because your vendor must reach it, and therefore leaks nothing: the body is literally `up` or `down`. Internal topology lives behind the bearer token.
 
 ## Operational notes
 
-- **`pending` counts as healthy.** A newly deployed check reports `200` until its first
-  ping. Deliberate: the alternative pages you for every heartbeat on every deploy, and
-  you would learn to ignore the alerts within a week.
-- **SQLite + multiple replicas is silently wrong.** The cron's ping and the vendor's poll
-  can land on different pods that disagree. Use `driver: redis` for multi-replica, or a
-  PersistentVolume with a single replica.
-- **`/healthz` is not `/status`.** Never point a Kubernetes liveness probe at `/status`, or
-  a genuinely dead backup job will cause k8s to kill the monitor reporting it.
-- **Clock skew breaks heartbeats.** Every decision is a subtraction against the local
-  clock. Depend on the host's NTP, and suspect the clock first if this misbehaves.
-- **A ping up to 60s early still counts.** If the cron host's clock runs slightly
-  ahead, a `0 2 * * *` job can check in at 01:59:30 — before its own occurrence. That
-  ping covers it. The tolerance is fixed and not configurable: clock skew is an
-  environmental defect with a fixed remedy (NTP), not a per-check policy.
-- **DST is handled by the schedule, not by you.** Occurrences are computed in
-  `server.timezone`, so a 25-hour day has 25 hourly occurrences and a spring-forward
-  day moves a missing `0 2 * * *` to 03:00 — matching cron itself. No grace padding is
-  needed for either transition.
+- **`pending` counts as healthy.** A newly deployed check reports `200` until its first ping. Deliberate: the alternative pages you for every heartbeat on every deploy, and you would learn to ignore the alerts within a week.
+- **SQLite + multiple replicas is silently wrong.** The cron's ping and the vendor's poll can land on different pods that disagree. Use `driver: redis` for multi-replica, or a PersistentVolume with a single replica.
+- **`/healthz` is not `/status`.** Never point a Kubernetes liveness probe at `/status`, or a genuinely dead backup job will cause k8s to kill the monitor reporting it.
+- **Clock skew breaks heartbeats.** Every decision is a subtraction against the local clock. Depend on the host's NTP, and suspect the clock first if this misbehaves.
+- **A ping up to 60s early still counts.** If the cron host's clock runs slightly ahead, a `0 2 * * *` job can check in at 01:59:30 — before its own occurrence. That ping covers it. The tolerance is fixed and not configurable: clock skew is an environmental defect with a fixed remedy (NTP), not a per-check policy.
+- **DST is handled by the schedule, not by you.** Occurrences are computed in `server.timezone`, so a 25-hour day has 25 hourly occurrences and a spring-forward day moves a missing `0 2 * * *` to 03:00 — matching cron itself. No grace padding is needed for either transition.
+
+## How it works
+
+State is written by two paths and read by a third. Nothing runs a background sweep to decide health:
+
+| Component | Responsibility |
+|---|---|
+| `api.py` | Ingests pings. Writes state, never decides up/down. |
+| `scheduler.py` | Probes endpoints on an interval. Also write-only. |
+| `evaluator.py` | Decides `up`/`down`/`pending`/`paused` — **at read time**, as a pure function of `(check, state, now)`. No I/O, no clock reads. |
+| `store/` | `SqliteStore` and `RedisStore` behind one `Store` protocol, both passing the same conformance suite. |
+| `schedule.py` | The only module that imports `cronsim`, so the evaluator stays free of third-party cron logic. |
+
+Computing state at read time is what makes the correctness surface testable in microseconds, and it means a restart can never lose a verdict — only the observations behind it.
 
 ## Development
 
-Requires [uv](https://docs.astral.sh/uv/).
-
-```sh
-uv sync --extra dev     # creates .venv, installs from uv.lock
+```bash
+uv sync --extra dev     # creates .venv from uv.lock
 uv run pytest           # 137 tests
 ```
 
-`.python-version` pins 3.12 — the same version the container ships, so a green
-suite can't hide a break on the Python your users actually run.
+`.python-version` pins 3.12 — the same version the container ships, so a green suite can't hide a break on the Python your users actually run.
 
-`uv.lock` is committed and the image builds with `uv sync --locked`, so the
-container gets the exact versions the tests ran against. CI uses `--locked` too,
-which fails if the lockfile has drifted from `pyproject.toml`. After changing a
-dependency, commit the regenerated lockfile.
+`uv.lock` is committed and the image builds with `uv sync --locked`, so the container gets the exact versions the tests ran against. CI uses `--locked` too, which fails if the lockfile has drifted from `pyproject.toml`. After changing a dependency, commit the regenerated lockfile.
 
-There is deliberately no `pythonpath` setting in the pytest config. Tests run
-against the installed package, so a missing or stale install fails loudly rather
-than being silently masked — which is how a broken editable install once went
-unnoticed here for weeks.
+> There is deliberately no `pythonpath` setting in the pytest config. Tests run against
+> the installed package, so a missing or stale install fails loudly rather than being
+> silently masked — which is exactly how a broken editable install once went unnoticed
+> here.
 
-## Building the image
+### Building the image
 
-```sh
-docker buildx build -t thump:dev .                              # host arch
-docker buildx build --platform linux/amd64,linux/arm64 -t thump:dev .
+```bash
+docker buildx build -t thump:dev .                                      # host arch
+docker buildx build --platform linux/amd64,linux/arm64 -t thump:dev .   # both
 ```
 
-Multi-arch needs QEMU registered on the host, or the arm64 stage dies with
-`exec format error`:
+Multi-arch needs QEMU registered on the host, or the arm64 stage dies with `exec format error`:
 
-```sh
+```bash
 docker run --privileged --rm tonistiigi/binfmt --install arm64
 ```
 
-CI handles this with `docker/setup-qemu-action`. Images publish to GHCR on a
-`v*` tag; every other run builds both architectures without pushing, so an
-arch-specific break surfaces on the PR that causes it.
+CI handles this with `docker/setup-qemu-action`. Images publish to GHCR on a `v*` tag; every other run builds both architectures without pushing, so an arch-specific break surfaces on the PR that causes it.
+
+## Credits
+
+| Project | Role |
+|---|---|
+| [cronsim](https://github.com/cuu508/cronsim) by [@cuu508](https://github.com/cuu508) | Cron expression parsing and DST-correct occurrence maths. Written for [Healthchecks.io](https://healthchecks.io) — the same problem domain, so its edge cases were found by exactly this use case. |
+| [FastAPI](https://fastapi.tiangolo.com) | HTTP surface |
+| [uv](https://docs.astral.sh/uv/) | Packaging and reproducible builds |
+
+---
+
+## License
+
+MIT
