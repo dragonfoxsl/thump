@@ -1,0 +1,9 @@
+.venv/
+.git/
+.github/
+.superpowers/
+.claude/
+docs/
+__pycache__/
+*.pyc
+*.db
