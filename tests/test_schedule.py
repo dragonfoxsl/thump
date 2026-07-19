@@ -124,3 +124,13 @@ def test_reverse_iteration_collapses_the_repeated_hour():
     assert s.prev_at_or_before(
         datetime(2025, 11, 2, 6, 30, tzinfo=UTC)
     ) == datetime(2025, 11, 2, 5, 0, tzinfo=UTC)
+
+
+def test_prev_rejects_a_naive_datetime():
+    # The interval path raises TypeError on a naive `now`; the cron path must
+    # not be quieter about it. Without this guard, astimezone() silently
+    # reinterprets a naive datetime as system-local time and the check reports
+    # `up` off a wrong instant — a fail-OPEN in a project that fails loud.
+    s = CronSchedule.parse("0 2 * * *", UTC)
+    with pytest.raises(ValueError):
+        s.prev_at_or_before(datetime(2026, 7, 15, 2, 0))

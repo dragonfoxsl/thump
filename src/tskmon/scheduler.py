@@ -83,6 +83,14 @@ class Scheduler:
             for c in self._config.checks
             if c.type is CheckType.PROBE and c.enabled
         ]
+        for check in probes:
+            if check.interval is None:
+                # Check.interval is optional since cron schedules landed, but
+                # _loop sleeps on it. Config already forbids a probe without an
+                # interval, so this is unreachable via YAML — fail at startup
+                # rather than AttributeError on the first tick if that changes.
+                raise ValueError(f"probe {check.name!r} has no interval")
+
         if not probes:
             await asyncio.Event().wait()  # nothing to do; block until cancelled
         async with asyncio.TaskGroup() as tg:

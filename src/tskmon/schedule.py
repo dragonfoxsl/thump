@@ -48,6 +48,14 @@ class CronSchedule:
         period, seeding naively would resolve the deadline a full period late.
         Seeding from dt + 1s gives at-or-before semantics.
         """
+        if dt.tzinfo is None:
+            # astimezone() would silently reinterpret a naive datetime as
+            # system-local, resolving the deadline off a wrong instant and
+            # reporting `up`. The interval path raises TypeError on a naive
+            # `now`; this path must not be quieter about the same mistake.
+            raise ValueError(
+                f"prev_at_or_before requires a timezone-aware datetime, got {dt!r}"
+            )
         seed = dt.astimezone(self.tz) + timedelta(seconds=1)
         try:
             occurrence = next(CronSim(self.expr, seed, reverse=True))
