@@ -115,24 +115,31 @@ Both behaviors below were verified empirically against `cronsim` 2.7 with
   day — it yields `03:00 -04:00` (07:00 UTC), exactly 24h after the previous
   occurrence. This matches systemd-timer behavior and Vixie cron. No special handling
   needed.
-- **Fall back (2025-11-02):** wall-clock 02:00 occurs twice. `cronsim` yields it
-  **once**, at `02:00 -05:00` (07:00 UTC) — the *later* of the two.
+- **Fall back (2025-11-02):** `cronsim` yields `02:00 -05:00` (07:00 UTC), once.
 
-**Known limitation — fall-back ambiguity.** Cron implementations disagree about which
-of the two 02:00s runs the job. If the host fires at the *first* 02:00 (`-04:00`,
-06:00 UTC) while `cronsim` expects the second (07:00 UTC), the ping arrives one hour
-before its occurrence. With `grace` under one hour the check reports DOWN once, on
-one night per year, for a job that ran correctly.
+Note that 02:00 is **not** in the repeated hour. At 02:00 EDT the clock jumps back to
+01:00 EST, so the wall-clock times that occur twice are 01:00–01:59. Wall-clock 02:00
+occurs exactly once, and the day is 25 hours long.
 
-This is a disagreement between the host's cron and any external model of it; the
-monitor cannot resolve it from the ping alone. It is handled by documentation, not
-code: the README will note that a heartbeat scheduled in the 01:00–03:00 local window
-of a DST-observing zone should use `grace: 1h` or greater, which absorbs the
-ambiguity entirely. Widening `EARLY_TOLERANCE` to an hour was rejected — it would
-blind every check, all year, to fix one night.
+For a schedule *inside* the repeated hour, `cronsim` fires once, at the first
+(pre-transition) instant:
 
-Schedules outside that window, and any schedule in a non-DST zone such as `UTC`, are
-unaffected.
+- `0 1 * * *` on 2025-11-02 yields `01:00 -04:00` (05:00 UTC) only — not the second
+  01:00. This matches Vixie cron, which also runs a repeated-hour job once.
+- `0 * * * *` correctly yields **both** `01:00 -04:00` and `01:00 -05:00`, giving a
+  25-hour day.
+
+**No DST false-positive mitigation is required.** An earlier draft of this spec
+posited a one-hour disagreement between the host's cron and `cronsim` on fall-back
+night, and specified first a `grace: 1h` workaround and then a DST-aware tolerance to
+correct it. Both were removed: the premise was wrong. It assumed 02:00 was the
+repeated hour, and it assumed cron implementations disagree about the repeated hour.
+Neither holds. `EARLY_TOLERANCE` stays a flat 60 seconds, and no occurrence-specific
+widening exists.
+
+What this history does justify is **pinning the DST behaviors as tests** (see
+Testing), so that a future `cronsim` upgrade which changes any of them fails in CI
+rather than silently at 2am.
 
 All datetimes crossing the module boundary remain timezone-aware UTC, preserving the
 existing project-wide invariant. The local timezone is an implementation detail
@@ -153,6 +160,15 @@ class CronSchedule:
 
 `prev_at_or_before` converts `dt` into `tz`, iterates `cronsim` in reverse, and
 returns a tz-aware UTC datetime (or `None` if no occurrence precedes `dt`).
+
+**Critical implementation detail — the reverse iterator is strictly *before*.**
+Seeding `CronSim(expr, dt, reverse=True)` with a `dt` that falls exactly on an
+occurrence returns the *previous* one: seeding at `02:00` on a `0 2 * * *` schedule
+yields the prior day's `02:00`, not today's. Since the deadline formula evaluates
+`prev_at_or_before(now - grace)`, and `now - grace` lands exactly on an occurrence
+once per period, the naive implementation would resolve the deadline a full day late
+on that boundary. The wrapper therefore seeds from `dt + 1 second` to obtain
+*at-or-before* semantics. This is verified by a boundary test.
 
 This wrapper exists so that `evaluator.py` — the pure correctness core — never
 imports a third-party library, and so the cron behavior is testable in isolation from
@@ -188,7 +204,7 @@ Added to `[project.dependencies]` in `pyproject.toml`.
 | `src/tskmon/config.py` | Heartbeats require exactly one of `interval`/`schedule`; parse expression against `server.timezone`. |
 | `src/tskmon/evaluator.py` | Heartbeat branch forks on `check.schedule`; add `EARLY_TOLERANCE`. |
 | `pyproject.toml` | Add `cronsim` dependency. |
-| `README.md` | Document `schedule:`, the tolerance constant, DST behavior, and the `grace: 1h` guidance for fall-back. |
+| `README.md` | Document `schedule:`, the tolerance constant, and DST behavior. |
 
 `scheduler.py`, `api.py`, `store/`, `metrics.py`, and `tokens.py` are untouched.
 
@@ -229,9 +245,9 @@ paths.
   fall-back Sunday in `America/New_York` — pinning the verified occurrences (`03:00
   -04:00` and `02:00 -05:00` respectively) so that a future `cronsim` upgrade which
   changes them fails loudly in CI rather than silently at 2am.
-- **`tests/test_evaluator.py`**: the fall-back ambiguity case explicitly — a ping at
-  the first 02:00 with `grace: 1h` must report UP, documenting the mitigation as a
-  test rather than only as prose.
+- **`tests/test_schedule.py`** additionally pins the repeated-hour behavior: `0 1 * * *`
+  on 2025-11-02 yields exactly one occurrence (05:00 UTC), and `0 * * * *` yields both
+  01:00 instants.
 - **`tests/test_evaluator.py`**: cron-heartbeat cases — healthy ping, missed
   occurrence, ping arriving early but inside tolerance, ping early beyond tolerance,
   and stability across a multi-day outage. Existing interval cases must be unaffected.
@@ -246,8 +262,8 @@ config uses `interval`, and that path is untouched.
 
 1. A `0 2 * * *` heartbeat with `grace: 30m` reports UP when its job pings anywhere in
    01:59–02:30 local, and DOWN once 02:30 passes with no ping.
-2. The same check does not report DOWN on a spring-forward day, and does not report
-   DOWN on a fall-back day given `grace: 1h` (see the fall-back limitation above).
+2. The same check does not report DOWN on either DST transition day, with no
+   schedule-specific or grace-specific accommodation.
 3. `0 2 * * 1-5` does not report DOWN over a weekend.
 4. A malformed expression fails at boot with a message naming the check.
 5. Existing `interval`-based configs behave identically to today.
