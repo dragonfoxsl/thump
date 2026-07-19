@@ -294,14 +294,14 @@ class CronSchedule:
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_schedule.py -v`
-Expected: 14 passed.
+Expected: 13 passed.
 
 If `test_prev_includes_an_instant_exactly_on_an_occurrence` fails with the previous day's date, the `+ timedelta(seconds=1)` seeding was dropped — restore it.
 
 - [ ] **Step 6: Run the full suite**
 
 Run: `.venv/bin/pytest -q`
-Expected: 118 passed (104 existing + 14 new).
+Expected: 117 passed (104 existing + 13 new).
 
 - [ ] **Step 7: Commit**
 
@@ -623,7 +623,7 @@ Expected: all pass — the 12 new cron cases plus every existing interval case u
 - [ ] **Step 6: Run the full suite**
 
 Run: `.venv/bin/pytest -q`
-Expected: 130 passed (118 + 12 new).
+Expected: 129 passed (117 + 12 new).
 
 - [ ] **Step 7: Commit**
 
@@ -810,7 +810,7 @@ Expected: all pass — the 6 new cases plus every existing config case.
 - [ ] **Step 7: Run the full suite**
 
 Run: `.venv/bin/pytest -q`
-Expected: 136 passed (130 + 6 new).
+Expected: 135 passed (129 + 6 new).
 
 - [ ] **Step 8: Commit**
 
@@ -902,7 +902,7 @@ In `README.md`, add these two bullets to the end of the existing `## Operational
 - [ ] **Step 5: Verify the docs match reality**
 
 Run: `.venv/bin/pytest -q`
-Expected: 136 passed — unchanged; this task adds no tests and changes no code.
+Expected: 135 passed — unchanged; this task adds no tests and changes no code.
 
 Then confirm the example config actually loads:
 
