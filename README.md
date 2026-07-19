@@ -14,7 +14,7 @@ already knows how to poll. It does the seeing; your vendor keeps doing the pagin
 
 ```sh
 docker run -e THUMP_SECRET=$(openssl rand -hex 32) \
-  -v ./config.yaml:/etc/thump/config.yaml:ro -p 8080:8080 ghcr.io/you/thump
+  -v ./config.yaml:/etc/thump/config.yaml:ro -p 8080:8080 ghcr.io/dragonfoxsl/thump
 ```
 
 Add a heartbeat to a cron job — the URL is the credential, so there is nothing else to
@@ -98,19 +98,40 @@ expired was not covered by a ping.
 
 ## Development
 
-```sh
-python -m venv .venv
-.venv/bin/pip install -e '.[dev]'
-.venv/bin/pytest
-```
-
-The editable install is not optional. `pytest` sets `pythonpath = ["src"]` in
-`pyproject.toml` and so passes without it, which means a missing or stale install
-stays invisible until you run something directly:
+Requires [uv](https://docs.astral.sh/uv/).
 
 ```sh
-.venv/bin/python -c "import thump"   # ModuleNotFoundError if the install is stale
+uv sync --extra dev     # creates .venv, installs from uv.lock
+uv run pytest           # 137 tests
 ```
 
-If that fails while `pip list` still shows `thump`, the install recorded its metadata
-without writing a path hook. Re-run `pip install -e '.[dev]'`.
+`.python-version` pins 3.12 — the same version the container ships, so a green
+suite can't hide a break on the Python your users actually run.
+
+`uv.lock` is committed and the image builds with `uv sync --locked`, so the
+container gets the exact versions the tests ran against. CI uses `--locked` too,
+which fails if the lockfile has drifted from `pyproject.toml`. After changing a
+dependency, commit the regenerated lockfile.
+
+There is deliberately no `pythonpath` setting in the pytest config. Tests run
+against the installed package, so a missing or stale install fails loudly rather
+than being silently masked — which is how a broken editable install once went
+unnoticed here for weeks.
+
+## Building the image
+
+```sh
+docker buildx build -t thump:dev .                              # host arch
+docker buildx build --platform linux/amd64,linux/arm64 -t thump:dev .
+```
+
+Multi-arch needs QEMU registered on the host, or the arm64 stage dies with
+`exec format error`:
+
+```sh
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+```
+
+CI handles this with `docker/setup-qemu-action`. Images publish to GHCR on a
+`v*` tag; every other run builds both architectures without pushing, so an
+arch-specific break surfaces on the PR that causes it.
