@@ -25,6 +25,13 @@ checks:
     interval: 24h
     grace: 1h
 
+  # Deadline anchored to when the job SHOULD run, not to when it was last seen.
+  # Requires server.timezone; mutually exclusive with `interval`.
+  - name: weekday-report
+    type: heartbeat
+    schedule: "0 6 * * 1-5"   # 06:00 on weekdays, in server.timezone
+    grace: 30m
+
   - name: internal-payments-api
     type: probe
     url: http://payments.internal:8080/healthz
