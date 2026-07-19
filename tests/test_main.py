@@ -1,20 +1,20 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from tskmon.config import parse_config
-from tskmon.main import build_store
-from tskmon.store.redis import RedisStore
-from tskmon.store.sqlite import SqliteStore
+from thump.config import parse_config
+from thump.main import build_store
+from thump.store.redis import RedisStore
+from thump.store.sqlite import SqliteStore
 
 BASE = """
 store: {{driver: {driver}, dsn: '{dsn}'}}
-server: {{listen: ":8080", secret: ${{TSKMON_SECRET}}}}
+server: {{listen: ":8080", secret: ${{THUMP_SECRET}}}}
 checks:
   - name: nightly-db-backup
     type: heartbeat
     interval: 24h
 """
-ENV = {"TSKMON_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "s3cret"}
 
 
 def test_build_store_selects_sqlite():
@@ -31,7 +31,7 @@ def test_app_boots_end_to_end_and_serves_a_ping(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(BASE.format(driver="sqlite", dsn=str(tmp_path / "s.db")))
 
-    from tskmon.main import create_app
+    from thump.main import create_app
 
     app = create_app(str(path), env=ENV)
     with TestClient(app) as client:

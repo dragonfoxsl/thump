@@ -16,11 +16,11 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from tskmon.config import Config
-from tskmon.evaluator import evaluate
-from tskmon.metrics import render_metrics
-from tskmon.models import Event, State
-from tskmon.store.base import Store, StoreUnavailable
+from thump.config import Config
+from thump.evaluator import evaluate
+from thump.metrics import render_metrics
+from thump.models import Event, State
+from thump.store.base import Store, StoreUnavailable
 
 MAX_BODY_BYTES = 4096
 
@@ -32,7 +32,7 @@ def _utcnow() -> datetime:
 
 
 def build_app(config: Config, store: Store, clock: Clock = _utcnow) -> FastAPI:
-    app = FastAPI(title="tskmon", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="thump", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.config = config
     app.state.store = store
     app.state.clock = clock

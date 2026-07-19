@@ -5,9 +5,9 @@
 
 ## Problem
 
-`tskmon` today expresses a heartbeat deadline as a duration: `interval: 24h` plus a
+`thump` today expresses a heartbeat deadline as a duration: `interval: 24h` plus a
 `grace` window. The evaluator marks a check DOWN when
-`now - last_seen > interval + grace` (`src/tskmon/evaluator.py:31`).
+`now - last_seen > interval + grace` (`src/thump/evaluator.py:31`).
 
 For the system's primary use case — monitoring cron jobs — this is the wrong model,
 in three distinct ways.
@@ -27,7 +27,7 @@ in three distinct ways.
    four days.
 
 The original design anticipated this. `server.timezone` already exists and is parsed
-(`src/tskmon/config.py:132`) but is currently unused — it was put there as the hook
+(`src/thump/config.py:132`) but is currently unused — it was put there as the hook
 this feature hangs on.
 
 ## Solution
@@ -147,7 +147,7 @@ internal to `CronSchedule`.
 
 ## Architecture
 
-### New module: `src/tskmon/schedule.py`
+### New module: `src/thump/schedule.py`
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -199,10 +199,10 @@ Added to `[project.dependencies]` in `pyproject.toml`.
 
 | File | Change |
 |---|---|
-| `src/tskmon/schedule.py` | Create. `CronSchedule` wrapper + parse helper. |
-| `src/tskmon/models.py` | `Check.interval` widens to `timedelta \| None`; add `schedule: CronSchedule \| None = None`. |
-| `src/tskmon/config.py` | Heartbeats require exactly one of `interval`/`schedule`; parse expression against `server.timezone`. |
-| `src/tskmon/evaluator.py` | Heartbeat branch forks on `check.schedule`; add `EARLY_TOLERANCE`. |
+| `src/thump/schedule.py` | Create. `CronSchedule` wrapper + parse helper. |
+| `src/thump/models.py` | `Check.interval` widens to `timedelta \| None`; add `schedule: CronSchedule \| None = None`. |
+| `src/thump/config.py` | Heartbeats require exactly one of `interval`/`schedule`; parse expression against `server.timezone`. |
+| `src/thump/evaluator.py` | Heartbeat branch forks on `check.schedule`; add `EARLY_TOLERANCE`. |
 | `pyproject.toml` | Add `cronsim` dependency. |
 | `README.md` | Document `schedule:`, the tolerance constant, and DST behavior. |
 
@@ -212,7 +212,7 @@ Added to `[project.dependencies]` in `pyproject.toml`.
 
 For `type: heartbeat`, exactly one of `interval` or `schedule` is required. Setting
 both, or neither, is a collected `ConfigError`. This mirrors the existing rule that a
-heartbeat must not carry a `url` (`src/tskmon/config.py:175`).
+heartbeat must not carry a `url` (`src/thump/config.py:175`).
 
 The rejected alternative — letting `schedule` silently win when both are present —
 was declined because it introduces a precedence rule operators must memorize and lets
@@ -234,7 +234,7 @@ if check.schedule is not None:
 
 `evaluate()` remains pure: no network, no database, no clock reads. `now` stays a
 parameter. The existing `last_seen is None` fail-loud guard
-(`src/tskmon/evaluator.py:25-30`) precedes this fork and continues to protect both
+(`src/thump/evaluator.py:25-30`) precedes this fork and continues to protect both
 paths.
 
 ## Testing

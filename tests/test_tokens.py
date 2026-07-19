@@ -1,4 +1,4 @@
-from tskmon.tokens import derive_token
+from thump.tokens import derive_token
 
 
 def test_token_is_32_hex_chars():

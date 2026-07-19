@@ -7,7 +7,7 @@ and it is why `down` can be computed at read time rather than by a background sw
 
 from datetime import datetime, timedelta
 
-from tskmon.models import Check, CheckState, CheckType, State
+from thump.models import Check, CheckState, CheckType, State
 
 # Absorbs clock skew between the cron host and the monitor: a job whose host
 # runs slightly fast can ping just before its own scheduled occurrence. Not

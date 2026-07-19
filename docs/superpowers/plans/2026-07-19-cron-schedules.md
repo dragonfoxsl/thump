@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Package root:** `src/tskmon/`. Tests in `tests/`. Import as `from tskmon.x import y`.
+- **Package root:** `src/thump/`. Tests in `tests/`. Import as `from thump.x import y`.
 - **All datetimes are timezone-aware UTC** at every module boundary. The local timezone is an implementation detail internal to `CronSchedule`. Never `datetime.utcnow()`.
 - **`evaluate()` performs no I/O and stays pure.** No network, no database, no clock reads. `now` remains a parameter. It must not import `cronsim`.
 - **`evaluate()` must not use `assert` for runtime invariants** — asserts vanish under `python -O`. Use explicit `raise`.
@@ -28,12 +28,12 @@
 | File | Change | Responsibility |
 |---|---|---|
 | `pyproject.toml` | Modify (Task 1) | Add `cronsim>=2.7` to `[project.dependencies]`. |
-| `src/tskmon/schedule.py` | Create (Task 1) | `CronSchedule` wrapper; the only module importing `cronsim`. |
+| `src/thump/schedule.py` | Create (Task 1) | `CronSchedule` wrapper; the only module importing `cronsim`. |
 | `tests/test_schedule.py` | Create (Task 1) | Parsing, at-or-before boundary, DST pinning. |
-| `src/tskmon/models.py` | Modify (Task 2) | `interval` widens to `timedelta \| None`; add `schedule`. |
-| `src/tskmon/evaluator.py` | Modify (Task 2) | Fork heartbeat branch on `check.schedule`; add `EARLY_TOLERANCE`. |
+| `src/thump/models.py` | Modify (Task 2) | `interval` widens to `timedelta \| None`; add `schedule`. |
+| `src/thump/evaluator.py` | Modify (Task 2) | Fork heartbeat branch on `check.schedule`; add `EARLY_TOLERANCE`. |
 | `tests/test_evaluator.py` | Modify (Task 2) | Cron-heartbeat evaluation cases. |
-| `src/tskmon/config.py` | Modify (Task 3) | Exactly-one-of validation; build `CronSchedule` from `server.timezone`. |
+| `src/thump/config.py` | Modify (Task 3) | Exactly-one-of validation; build `CronSchedule` from `server.timezone`. |
 | `tests/test_config.py` | Modify (Task 3) | Validation and wiring cases. |
 | `README.md` | Modify (Task 4) | Document `schedule:`, tolerance, DST. |
 | `config.example.yaml` | Modify (Task 4) | Show a cron heartbeat. |
@@ -46,15 +46,15 @@ Creates the seam that keeps `cronsim` out of the pure evaluator, and nails down 
 
 **Files:**
 - Modify: `pyproject.toml`
-- Create: `src/tskmon/schedule.py`, `tests/test_schedule.py`
+- Create: `src/thump/schedule.py`, `tests/test_schedule.py`
 
 **Interfaces:**
 - Consumes: nothing from the project.
 - Produces:
-  - `tskmon.schedule.CronSchedule` — frozen dataclass with fields `expr: str`, `tz: ZoneInfo`.
+  - `thump.schedule.CronSchedule` — frozen dataclass with fields `expr: str`, `tz: ZoneInfo`.
   - `CronSchedule.parse(expr: str, tz: ZoneInfo) -> CronSchedule` — classmethod; raises `ScheduleError` on a malformed expression.
   - `CronSchedule.prev_at_or_before(dt: datetime) -> datetime | None` — most recent occurrence at or before `dt`, returned as tz-aware UTC.
-  - `tskmon.schedule.ScheduleError` — exception raised for a malformed expression. Task 3 catches this.
+  - `thump.schedule.ScheduleError` — exception raised for a malformed expression. Task 3 catches this.
 
 **Behavior that must hold** (all verified against `cronsim` 2.7 during design):
 - `CronSim`'s reverse iterator is **strictly before** its seed. `prev_at_or_before` must seed from `dt + 1 second` to get at-or-before semantics.
@@ -103,7 +103,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tskmon.schedule import CronSchedule, ScheduleError
+from thump.schedule import CronSchedule, ScheduleError
 
 UTC = ZoneInfo("UTC")
 NY = ZoneInfo("America/New_York")
@@ -222,11 +222,11 @@ def test_reverse_iteration_collapses_the_repeated_hour():
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `.venv/bin/pytest tests/test_schedule.py -v`
-Expected: every test ERRORs at collection with `ModuleNotFoundError: No module named 'tskmon.schedule'`.
+Expected: every test ERRORs at collection with `ModuleNotFoundError: No module named 'thump.schedule'`.
 
 - [ ] **Step 4: Implement `schedule.py`**
 
-Create `src/tskmon/schedule.py`:
+Create `src/thump/schedule.py`:
 
 ```python
 """Cron expressions, wrapped.
@@ -306,7 +306,7 @@ Expected: 117 passed (104 existing + 13 new).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add pyproject.toml src/tskmon/schedule.py tests/test_schedule.py
+git add pyproject.toml src/thump/schedule.py tests/test_schedule.py
 git commit -m "feat: CronSchedule wrapper over cronsim with at-or-before semantics
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -319,14 +319,14 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 The pure correctness core. Done before config so that the evaluator can consume a cron check before config is able to produce one — there is no intermediate state where a valid config crashes the evaluator.
 
 **Files:**
-- Modify: `src/tskmon/models.py`, `src/tskmon/evaluator.py`
+- Modify: `src/thump/models.py`, `src/thump/evaluator.py`
 - Test: `tests/test_evaluator.py`
 
 **Interfaces:**
 - Consumes: `CronSchedule` and `CronSchedule.prev_at_or_before` from Task 1.
 - Produces:
   - `Check.interval: timedelta | None` (was `timedelta`) and `Check.schedule: CronSchedule | None = None`.
-  - `tskmon.evaluator.EARLY_TOLERANCE: timedelta` — 60 seconds.
+  - `thump.evaluator.EARLY_TOLERANCE: timedelta` — 60 seconds.
 
 **Note on field ordering:** `Check` is a frozen dataclass whose fields without defaults must precede those with defaults. `interval` keeps its position (it is not given a default, it merely widens its type), and `schedule` is added at the end alongside the other defaulted fields. Existing positional construction is unaffected; all project code and tests build `Check` with keyword arguments.
 
@@ -339,7 +339,7 @@ Add to the end of `tests/test_evaluator.py`:
 
 from zoneinfo import ZoneInfo
 
-from tskmon.schedule import CronSchedule
+from thump.schedule import CronSchedule
 
 NY = ZoneInfo("America/New_York")
 UTC_TZ = ZoneInfo("UTC")
@@ -496,10 +496,10 @@ Expected: FAIL — `TypeError: Check.__init__() got an unexpected keyword argume
 
 - [ ] **Step 3: Widen the model**
 
-In `src/tskmon/models.py`, add the import at the top (after the existing `from enum import StrEnum`):
+In `src/thump/models.py`, add the import at the top (after the existing `from enum import StrEnum`):
 
 ```python
-from tskmon.schedule import CronSchedule
+from thump.schedule import CronSchedule
 ```
 
 Then change the `Check` dataclass. Replace:
@@ -543,12 +543,12 @@ class Check:
 
 - [ ] **Step 4: Fork the evaluator**
 
-In `src/tskmon/evaluator.py`, replace the import block:
+In `src/thump/evaluator.py`, replace the import block:
 
 ```python
 from datetime import datetime
 
-from tskmon.models import Check, CheckState, CheckType, State
+from thump.models import Check, CheckState, CheckType, State
 ```
 
 with:
@@ -556,7 +556,7 @@ with:
 ```python
 from datetime import datetime, timedelta
 
-from tskmon.models import Check, CheckState, CheckType, State
+from thump.models import Check, CheckState, CheckType, State
 
 # Absorbs clock skew between the cron host and the monitor: a job whose host
 # runs slightly fast can ping just before its own scheduled occurrence. Not
@@ -628,7 +628,7 @@ Expected: 129 passed (117 + 12 new).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/tskmon/models.py src/tskmon/evaluator.py tests/test_evaluator.py
+git add src/thump/models.py src/thump/evaluator.py tests/test_evaluator.py
 git commit -m "feat: evaluate heartbeats against a cron schedule
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -641,7 +641,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 Makes `schedule:` reachable from a YAML file, enforcing exactly-one-of and finally using the `server.timezone` hook that has been parsed-but-unused since the MVP.
 
 **Files:**
-- Modify: `src/tskmon/config.py`
+- Modify: `src/thump/config.py`
 - Test: `tests/test_config.py`
 
 **Interfaces:**
@@ -663,10 +663,10 @@ Add to the end of `tests/test_config.py`:
 CRON = """
 store:
   driver: sqlite
-  dsn: /var/lib/tskmon/state.db
+  dsn: /var/lib/thump/state.db
 server:
   listen: ":8080"
-  secret: ${TSKMON_SECRET}
+  secret: ${THUMP_SECRET}
   timezone: America/New_York
 checks:
   - name: nightly-db-backup
@@ -707,7 +707,7 @@ def test_probe_may_not_carry_a_schedule():
 store:
   driver: sqlite
 server:
-  secret: ${TSKMON_SECRET}
+  secret: ${THUMP_SECRET}
 checks:
   - name: payments
     type: probe
@@ -742,15 +742,15 @@ Expected: FAIL — `test_schedule_is_parsed_against_the_server_timezone` fails b
 
 - [ ] **Step 3: Import the schedule module in config**
 
-In `src/tskmon/config.py`, add to the imports (next to the existing `from tskmon.models import Check, CheckType`):
+In `src/thump/config.py`, add to the imports (next to the existing `from thump.models import Check, CheckType`):
 
 ```python
-from tskmon.schedule import CronSchedule, ScheduleError
+from thump.schedule import CronSchedule, ScheduleError
 ```
 
 - [ ] **Step 4: Replace the interval-required block with the exactly-one-of rules**
 
-In `src/tskmon/config.py`, the current block is:
+In `src/thump/config.py`, the current block is:
 
 ```python
         if "interval" not in raw:
@@ -815,7 +815,7 @@ Expected: 135 passed (129 + 6 new).
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/tskmon/config.py tests/test_config.py
+git add src/thump/config.py tests/test_config.py
 git commit -m "feat: accept cron schedules in config, validated against server.timezone
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -908,8 +908,8 @@ Then confirm the example config actually loads:
 
 ```bash
 .venv/bin/python -c "
-from tskmon.config import load_config
-cfg = load_config('config.example.yaml', {'TSKMON_SECRET':'x','TSKMON_ADMIN_TOKEN':'y'})
+from thump.config import load_config
+cfg = load_config('config.example.yaml', {'THUMP_SECRET':'x','THUMP_ADMIN_TOKEN':'y'})
 for c in cfg.checks:
     print(c.name, '| interval:', c.interval, '| schedule:', c.schedule.expr if c.schedule else None)
 "

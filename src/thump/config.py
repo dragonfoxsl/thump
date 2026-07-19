@@ -17,9 +17,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
-from tskmon.models import Check, CheckType
-from tskmon.schedule import CronSchedule, ScheduleError
-from tskmon.tokens import derive_token
+from thump.models import Check, CheckType
+from thump.schedule import CronSchedule, ScheduleError
+from thump.tokens import derive_token
 
 VALID_DRIVERS = ("sqlite", "redis")
 
@@ -124,7 +124,7 @@ def parse_config(text: str, env: Mapping[str, str]) -> Config:
     driver = str(raw_store.get("driver", "sqlite"))
     if driver not in VALID_DRIVERS:
         errors.append(f"store.driver must be one of {VALID_DRIVERS}, got {driver!r}")
-    store = StoreConfig(driver=driver, dsn=str(raw_store.get("dsn", "./tskmon.db")))
+    store = StoreConfig(driver=driver, dsn=str(raw_store.get("dsn", "./thump.db")))
 
     raw_server = doc.get("server") or {}
     secret = raw_server.get("secret")

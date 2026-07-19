@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
-from tskmon.models import CheckState, Event
+from thump.models import CheckState, Event
 
 
 class StoreUnavailable(Exception):

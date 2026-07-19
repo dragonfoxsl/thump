@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Package root:** `src/tskmon/`. Tests in `tests/`. Import as `from tskmon.x import y`.
+- **Package root:** `src/thump/`. Tests in `tests/`. Import as `from thump.x import y`.
 - **All datetimes are timezone-aware UTC.** Never use `datetime.utcnow()` (it returns naive). Use `datetime.now(timezone.utc)`.
 - **`server.timezone` is DISPLAY ONLY.** It affects rendering in `/checks` and logs. If it ever affects evaluation, that is a bug.
 - **The clock is injected.** Every component that needs the current time takes a `clock: Callable[[], datetime]` defaulting to `lambda: datetime.now(timezone.utc)`. This is what makes the evaluator tests fast and non-flaky.
@@ -29,24 +29,24 @@
 
 | File | Responsibility |
 |---|---|
-| `src/tskmon/models.py` | Domain types: `State`, `CheckType`, `Check`, `CheckState`, `Event`. No logic. |
-| `src/tskmon/evaluator.py` | The pure decision function. The correctness surface. |
-| `src/tskmon/tokens.py` | HMAC token derivation. |
-| `src/tskmon/config.py` | YAML load, env expansion, defaults merge, validation. |
-| `src/tskmon/store/base.py` | `Store` protocol + `StoreUnavailable`. |
-| `src/tskmon/store/sqlite.py` | Default store. |
-| `src/tskmon/store/redis.py` | Multi-replica store. |
-| `src/tskmon/metrics.py` | Pure Prometheus text renderer. |
-| `src/tskmon/api.py` | FastAPI app: ingest, status, observability, healthz. |
-| `src/tskmon/scheduler.py` | Async probe loop. |
-| `src/tskmon/main.py` | Entrypoint wiring. |
+| `src/thump/models.py` | Domain types: `State`, `CheckType`, `Check`, `CheckState`, `Event`. No logic. |
+| `src/thump/evaluator.py` | The pure decision function. The correctness surface. |
+| `src/thump/tokens.py` | HMAC token derivation. |
+| `src/thump/config.py` | YAML load, env expansion, defaults merge, validation. |
+| `src/thump/store/base.py` | `Store` protocol + `StoreUnavailable`. |
+| `src/thump/store/sqlite.py` | Default store. |
+| `src/thump/store/redis.py` | Multi-replica store. |
+| `src/thump/metrics.py` | Pure Prometheus text renderer. |
+| `src/thump/api.py` | FastAPI app: ingest, status, observability, healthz. |
+| `src/thump/scheduler.py` | Async probe loop. |
+| `src/thump/main.py` | Entrypoint wiring. |
 
 ---
 
 ### Task 1: Scaffold + domain models
 
 **Files:**
-- Create: `pyproject.toml`, `src/tskmon/__init__.py`, `src/tskmon/models.py`
+- Create: `pyproject.toml`, `src/thump/__init__.py`, `src/thump/models.py`
 - Test: `tests/test_models.py`
 
 **Interfaces:**
@@ -57,7 +57,7 @@
 
 ```toml
 [project]
-name = "tskmon"
+name = "thump"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -80,7 +80,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/tskmon"]
+packages = ["src/thump"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -90,7 +90,7 @@ pythonpath = ["src"]
 - [ ] **Step 2: Install**
 
 Run: `python -m venv .venv && .venv/bin/pip install -e ".[dev]"`
-Expected: `Successfully installed tskmon-0.1.0 ...`
+Expected: `Successfully installed thump-0.1.0 ...`
 
 - [ ] **Step 3: Write the failing test**
 
@@ -99,7 +99,7 @@ Create `tests/test_models.py`:
 ```python
 from datetime import timedelta
 
-from tskmon.models import Check, CheckState, CheckType, Event, State
+from thump.models import Check, CheckState, CheckType, Event, State
 
 
 def test_state_values():
@@ -142,13 +142,13 @@ def test_event_detail_defaults_empty():
 - [ ] **Step 4: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/test_models.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'tskmon.models'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'thump.models'`
 
 - [ ] **Step 5: Write the implementation**
 
-Create `src/tskmon/__init__.py` (empty file).
+Create `src/thump/__init__.py` (empty file).
 
-Create `src/tskmon/models.py`:
+Create `src/thump/models.py`:
 
 ```python
 """Domain types. No logic lives here."""
@@ -210,7 +210,7 @@ Expected: 4 passed
 
 ```bash
 printf '.venv/\n__pycache__/\n*.pyc\n*.db\n' > .gitignore
-git add pyproject.toml .gitignore src/tskmon/__init__.py src/tskmon/models.py tests/test_models.py
+git add pyproject.toml .gitignore src/thump/__init__.py src/thump/models.py tests/test_models.py
 git commit -m "feat: scaffold project and domain models"
 ```
 
@@ -221,11 +221,11 @@ git commit -m "feat: scaffold project and domain models"
 This is the correctness surface of the entire system. It gets the most tests.
 
 **Files:**
-- Create: `src/tskmon/evaluator.py`
+- Create: `src/thump/evaluator.py`
 - Test: `tests/test_evaluator.py`
 
 **Interfaces:**
-- Consumes: `Check`, `CheckState`, `State`, `CheckType` from `tskmon.models`.
+- Consumes: `Check`, `CheckState`, `State`, `CheckType` from `thump.models`.
 - Produces: `evaluate(check: Check, state: CheckState, now: datetime) -> State`. Called by `api.py` on every status request and by `metrics.py`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -237,8 +237,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from tskmon.evaluator import evaluate
-from tskmon.models import Check, CheckState, CheckType, State
+from thump.evaluator import evaluate
+from thump.models import Check, CheckState, CheckType, State
 
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
@@ -362,11 +362,11 @@ def test_evaluate_is_timezone_invariant():
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `.venv/bin/pytest tests/test_evaluator.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'tskmon.evaluator'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'thump.evaluator'`
 
 - [ ] **Step 3: Write the implementation**
 
-Create `src/tskmon/evaluator.py`:
+Create `src/thump/evaluator.py`:
 
 ```python
 """The pure decision function.
@@ -378,7 +378,7 @@ and it is why `down` can be computed at read time rather than by a background sw
 
 from datetime import datetime
 
-from tskmon.models import Check, CheckState, CheckType, State
+from thump.models import Check, CheckState, CheckType, State
 
 
 def evaluate(check: Check, state: CheckState, now: datetime) -> State:
@@ -412,7 +412,7 @@ Expected: 14 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/tskmon/evaluator.py tests/test_evaluator.py
+git add src/thump/evaluator.py tests/test_evaluator.py
 git commit -m "feat: pure evaluator — the correctness surface"
 ```
 
@@ -421,7 +421,7 @@ git commit -m "feat: pure evaluator — the correctness surface"
 ### Task 3: HMAC token derivation
 
 **Files:**
-- Create: `src/tskmon/tokens.py`
+- Create: `src/thump/tokens.py`
 - Test: `tests/test_tokens.py`
 
 **Interfaces:**
@@ -433,7 +433,7 @@ git commit -m "feat: pure evaluator — the correctness surface"
 Create `tests/test_tokens.py`:
 
 ```python
-from tskmon.tokens import derive_token
+from thump.tokens import derive_token
 
 
 def test_token_is_32_hex_chars():
@@ -465,11 +465,11 @@ def test_token_differs_per_secret():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/test_tokens.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'tskmon.tokens'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'thump.tokens'`
 
 - [ ] **Step 3: Write the implementation**
 
-Create `src/tskmon/tokens.py`:
+Create `src/thump/tokens.py`:
 
 ```python
 """Ping tokens: the URL *is* the credential.
@@ -495,7 +495,7 @@ Expected: 4 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/tskmon/tokens.py tests/test_tokens.py
+git add src/thump/tokens.py tests/test_tokens.py
 git commit -m "feat: HMAC-derived ping tokens"
 ```
 
@@ -504,11 +504,11 @@ git commit -m "feat: HMAC-derived ping tokens"
 ### Task 4: Config loading, env expansion, and validation
 
 **Files:**
-- Create: `src/tskmon/config.py`
+- Create: `src/thump/config.py`
 - Test: `tests/test_config.py`
 
 **Interfaces:**
-- Consumes: `Check`, `CheckType` from `tskmon.models`; `derive_token` from `tskmon.tokens`.
+- Consumes: `Check`, `CheckType` from `thump.models`; `derive_token` from `thump.tokens`.
 - Produces:
   - `parse_duration(s: str) -> timedelta`
   - `ConfigError(Exception)` with `.errors: list[str]`
@@ -528,24 +528,24 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tskmon.config import ConfigError, parse_config, parse_duration
-from tskmon.models import CheckType
-from tskmon.tokens import derive_token
+from thump.config import ConfigError, parse_config, parse_duration
+from thump.models import CheckType
+from thump.tokens import derive_token
 
 MINIMAL = """
 store:
   driver: sqlite
-  dsn: /var/lib/tskmon/state.db
+  dsn: /var/lib/thump/state.db
 server:
   listen: ":8080"
-  secret: ${TSKMON_SECRET}
+  secret: ${THUMP_SECRET}
 checks:
   - name: nightly-db-backup
     type: heartbeat
     interval: 24h
 """
 
-ENV = {"TSKMON_SECRET": "s3cret", "TSKMON_ADMIN_TOKEN": "admin-tok"}
+ENV = {"THUMP_SECRET": "s3cret", "THUMP_ADMIN_TOKEN": "admin-tok"}
 
 
 def test_parse_duration_units():
@@ -608,16 +608,16 @@ def test_timezone_defaults_to_utc():
 
 def test_timezone_is_parsed():
     text = MINIMAL.replace(
-        'secret: ${TSKMON_SECRET}',
-        'secret: ${TSKMON_SECRET}\n  timezone: Asia/Kolkata',
+        'secret: ${THUMP_SECRET}',
+        'secret: ${THUMP_SECRET}\n  timezone: Asia/Kolkata',
     )
     assert parse_config(text, ENV).server.timezone == ZoneInfo("Asia/Kolkata")
 
 
 def test_unknown_timezone_is_fatal():
     text = MINIMAL.replace(
-        'secret: ${TSKMON_SECRET}',
-        'secret: ${TSKMON_SECRET}\n  timezone: Mars/Olympus',
+        'secret: ${THUMP_SECRET}',
+        'secret: ${THUMP_SECRET}\n  timezone: Mars/Olympus',
     )
     with pytest.raises(ConfigError):
         parse_config(text, ENV)
@@ -630,7 +630,7 @@ def test_admin_token_is_optional_and_none_when_absent():
 def test_probe_check_is_parsed():
     text = """
 store: {driver: sqlite, dsn: ./s.db}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: internal-payments-api
     type: probe
@@ -655,7 +655,7 @@ def test_duplicate_check_names_are_fatal():
 def test_probe_without_url_is_fatal():
     text = """
 store: {driver: sqlite, dsn: ./s.db}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: p
     type: probe
@@ -679,7 +679,7 @@ def test_unknown_store_driver_is_fatal():
 def test_all_errors_are_reported_together():
     text = """
 store: {driver: mongodb, dsn: ./s.db}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: p
     type: probe
@@ -693,11 +693,11 @@ checks:
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `.venv/bin/pytest tests/test_config.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'tskmon.config'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'thump.config'`
 
 - [ ] **Step 3: Write the implementation**
 
-Create `src/tskmon/config.py`:
+Create `src/thump/config.py`:
 
 ```python
 """YAML is the single source of truth. Invalid config is fatal at boot.
@@ -719,8 +719,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
-from tskmon.models import Check, CheckType
-from tskmon.tokens import derive_token
+from thump.models import Check, CheckType
+from thump.tokens import derive_token
 
 VALID_DRIVERS = ("sqlite", "redis")
 
@@ -810,7 +810,7 @@ def parse_config(text: str, env: Mapping[str, str]) -> Config:
     driver = str(raw_store.get("driver", "sqlite"))
     if driver not in VALID_DRIVERS:
         errors.append(f"store.driver must be one of {VALID_DRIVERS}, got {driver!r}")
-    store = StoreConfig(driver=driver, dsn=str(raw_store.get("dsn", "./tskmon.db")))
+    store = StoreConfig(driver=driver, dsn=str(raw_store.get("dsn", "./thump.db")))
 
     raw_server = doc.get("server") or {}
     secret = raw_server.get("secret")
@@ -902,7 +902,7 @@ Expected: 18 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/tskmon/config.py tests/test_config.py
+git add src/thump/config.py tests/test_config.py
 git commit -m "feat: YAML config with env expansion and fail-fast validation"
 ```
 
@@ -913,11 +913,11 @@ git commit -m "feat: YAML config with env expansion and fail-fast validation"
 The conformance suite is the deliverable that keeps the abstraction honest. Task 6 reuses it verbatim against Redis.
 
 **Files:**
-- Create: `src/tskmon/store/__init__.py`, `src/tskmon/store/base.py`, `src/tskmon/store/sqlite.py`
+- Create: `src/thump/store/__init__.py`, `src/thump/store/base.py`, `src/thump/store/sqlite.py`
 - Test: `tests/store/__init__.py`, `tests/store/test_conformance.py`
 
 **Interfaces:**
-- Consumes: `CheckState`, `Event` from `tskmon.models`.
+- Consumes: `CheckState`, `Event` from `thump.models`.
 - Produces:
   - `StoreUnavailable(Exception)`
   - `Store` protocol:
@@ -954,8 +954,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from tskmon.models import Event
-from tskmon.store.sqlite import SqliteStore
+from thump.models import Event
+from thump.store.sqlite import SqliteStore
 
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
@@ -1045,19 +1045,19 @@ async def test_healthy_is_true_when_connected(store):
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `.venv/bin/pytest tests/store -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'tskmon.store'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'thump.store'`
 
 - [ ] **Step 3: Write the protocol**
 
-Create `src/tskmon/store/__init__.py`:
+Create `src/thump/store/__init__.py`:
 
 ```python
-from tskmon.store.base import Store, StoreUnavailable
+from thump.store.base import Store, StoreUnavailable
 
 __all__ = ["Store", "StoreUnavailable"]
 ```
 
-Create `src/tskmon/store/base.py`:
+Create `src/thump/store/base.py`:
 
 ```python
 """The storage seam. Data volume is trivial; this interface exists for
@@ -1068,7 +1068,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
-from tskmon.models import CheckState, Event
+from thump.models import CheckState, Event
 
 
 class StoreUnavailable(Exception):
@@ -1099,7 +1099,7 @@ class Store(Protocol):
 
 - [ ] **Step 4: Write the SQLite implementation**
 
-Create `src/tskmon/store/sqlite.py`:
+Create `src/thump/store/sqlite.py`:
 
 ```python
 """Default store: one file, stdlib, zero dependencies.
@@ -1117,8 +1117,8 @@ import sqlite3
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
-from tskmon.models import CheckState, Event
-from tskmon.store.base import StoreUnavailable
+from thump.models import CheckState, Event
+from thump.store.base import StoreUnavailable
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS check_state (
@@ -1272,7 +1272,7 @@ Expected: 9 passed
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/tskmon/store tests/store
+git add src/thump/store tests/store
 git commit -m "feat: Store protocol, SQLite implementation, conformance suite"
 ```
 
@@ -1281,14 +1281,14 @@ git commit -m "feat: Store protocol, SQLite implementation, conformance suite"
 ### Task 6: Redis store (against the same conformance suite)
 
 **Files:**
-- Create: `src/tskmon/store/redis.py`
+- Create: `src/thump/store/redis.py`
 - Modify: `tests/store/test_conformance.py` (extend the fixture params — the test bodies do not change)
 
 **Interfaces:**
 - Consumes: the `Store` protocol from Task 5.
 - Produces: `RedisStore(dsn: str, client: redis.asyncio.Redis | None = None)`. `client` is injected by tests (fakeredis); production passes only `dsn`.
 
-Data model: one hash per check at `tskmon:state:<name>`, one capped list at `tskmon:events:<name>` maintained with `LPUSH` + `LTRIM` — the ring buffer is a native Redis operation.
+Data model: one hash per check at `thump:state:<name>`, one capped list at `thump:events:<name>` maintained with `LPUSH` + `LTRIM` — the ring buffer is a native Redis operation.
 
 - [ ] **Step 1: Extend the conformance fixture (the failing test)**
 
@@ -1300,9 +1300,9 @@ from datetime import datetime, timedelta, timezone
 import fakeredis.aioredis
 import pytest
 
-from tskmon.models import Event
-from tskmon.store.redis import RedisStore
-from tskmon.store.sqlite import SqliteStore
+from thump.models import Event
+from thump.store.redis import RedisStore
+from thump.store.sqlite import SqliteStore
 
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
@@ -1323,11 +1323,11 @@ Leave every test body exactly as it is. That is the point of a conformance suite
 - [ ] **Step 2: Run tests to verify the Redis half fails**
 
 Run: `.venv/bin/pytest tests/store -v`
-Expected: the 9 `[sqlite]` tests pass; the 9 `[redis]` tests ERROR with `ModuleNotFoundError: No module named 'tskmon.store.redis'`
+Expected: the 9 `[sqlite]` tests pass; the 9 `[redis]` tests ERROR with `ModuleNotFoundError: No module named 'thump.store.redis'`
 
 - [ ] **Step 3: Write the implementation**
 
-Create `src/tskmon/store/redis.py`:
+Create `src/thump/store/redis.py`:
 
 ```python
 """Multi-replica store. All replicas share state, so a cron's ping and the
@@ -1343,8 +1343,8 @@ from datetime import datetime, timezone
 import redis.asyncio as aioredis
 from redis.exceptions import RedisError
 
-from tskmon.models import CheckState, Event
-from tskmon.store.base import StoreUnavailable
+from thump.models import CheckState, Event
+from thump.store.base import StoreUnavailable
 
 
 def _iso(dt: datetime) -> str:
@@ -1361,10 +1361,10 @@ class RedisStore:
         self._client = client
 
     def _key_state(self, name: str) -> str:
-        return f"tskmon:state:{name}"
+        return f"thump:state:{name}"
 
     def _key_events(self, name: str) -> str:
-        return f"tskmon:events:{name}"
+        return f"thump:events:{name}"
 
     def _db(self) -> aioredis.Redis:
         if self._client is None:
@@ -1472,7 +1472,7 @@ Expected: 18 passed (9 sqlite + 9 redis)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/tskmon/store/redis.py tests/store/test_conformance.py
+git add src/thump/store/redis.py tests/store/test_conformance.py
 git commit -m "feat: Redis store, passing the same conformance suite"
 ```
 
@@ -1481,7 +1481,7 @@ git commit -m "feat: Redis store, passing the same conformance suite"
 ### Task 7: Ingest endpoints (`/ping`)
 
 **Files:**
-- Create: `src/tskmon/api.py`
+- Create: `src/thump/api.py`
 - Test: `tests/test_api_ingest.py`
 
 **Interfaces:**
@@ -1498,19 +1498,19 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from tskmon.api import build_app
-from tskmon.config import parse_config
-from tskmon.store.sqlite import SqliteStore
+from thump.api import build_app
+from thump.config import parse_config
+from thump.store.sqlite import SqliteStore
 
 YAML = """
 store: {driver: sqlite, dsn: ':memory:'}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: nightly-db-backup
     type: heartbeat
     interval: 24h
 """
-ENV = {"TSKMON_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "s3cret"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
 
@@ -1586,11 +1586,11 @@ async def test_oversized_body_is_truncated_not_rejected(ctx):
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `.venv/bin/pytest tests/test_api_ingest.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'tskmon.api'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'thump.api'`
 
 - [ ] **Step 3: Write the implementation**
 
-Create `src/tskmon/api.py`:
+Create `src/thump/api.py`:
 
 ```python
 """HTTP surface. The route grouping is a security boundary, not an
@@ -1609,9 +1609,9 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request, Response
 
-from tskmon.config import Config
-from tskmon.models import Event
-from tskmon.store.base import Store
+from thump.config import Config
+from thump.models import Event
+from thump.store.base import Store
 
 MAX_BODY_BYTES = 4096
 
@@ -1623,7 +1623,7 @@ def _utcnow() -> datetime:
 
 
 def build_app(config: Config, store: Store, clock: Clock = _utcnow) -> FastAPI:
-    app = FastAPI(title="tskmon", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="thump", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.config = config
     app.state.store = store
     app.state.clock = clock
@@ -1669,7 +1669,7 @@ Expected: 6 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/tskmon/api.py tests/test_api_ingest.py
+git add src/thump/api.py tests/test_api_ingest.py
 git commit -m "feat: ping ingest endpoints"
 ```
 
@@ -1678,11 +1678,11 @@ git commit -m "feat: ping ingest endpoints"
 ### Task 8: Status endpoints (`/status`) and `/healthz`
 
 **Files:**
-- Modify: `src/tskmon/api.py` (add routes inside `build_app`)
+- Modify: `src/thump/api.py` (add routes inside `build_app`)
 - Test: `tests/test_api_status.py`
 
 **Interfaces:**
-- Consumes: `evaluate` from `tskmon.evaluator`, `StoreUnavailable` from `tskmon.store.base`.
+- Consumes: `evaluate` from `thump.evaluator`, `StoreUnavailable` from `thump.store.base`.
 - Produces: `GET /status`, `GET /status/{name}`, `GET /healthz`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1695,14 +1695,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from tskmon.api import build_app
-from tskmon.config import parse_config
-from tskmon.store.base import StoreUnavailable
-from tskmon.store.sqlite import SqliteStore
+from thump.api import build_app
+from thump.config import parse_config
+from thump.store.base import StoreUnavailable
+from thump.store.sqlite import SqliteStore
 
 YAML = """
 store: {driver: sqlite, dsn: ':memory:'}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: nightly-db-backup
     type: heartbeat
@@ -1713,7 +1713,7 @@ checks:
     interval: 1h
     enabled: false
 """
-ENV = {"TSKMON_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "s3cret"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
 
@@ -1834,12 +1834,12 @@ Expected: FAIL — 404s on `/status` (routes not defined)
 
 - [ ] **Step 3: Add the routes**
 
-In `src/tskmon/api.py`, extend the imports:
+In `src/thump/api.py`, extend the imports:
 
 ```python
-from tskmon.evaluator import evaluate
-from tskmon.models import Event, State
-from tskmon.store.base import Store, StoreUnavailable
+from thump.evaluator import evaluate
+from thump.models import Event, State
+from thump.store.base import Store, StoreUnavailable
 ```
 
 Then add these routes inside `build_app`, immediately before `return app`:
@@ -1901,7 +1901,7 @@ Expected: 11 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/tskmon/api.py tests/test_api_status.py
+git add src/thump/api.py tests/test_api_status.py
 git commit -m "feat: status endpoints and healthz — fail loud, leak nothing"
 ```
 
@@ -1910,15 +1910,15 @@ git commit -m "feat: status endpoints and healthz — fail loud, leak nothing"
 ### Task 9: Observability endpoints (`/checks`, `/metrics`) with fail-closed auth
 
 **Files:**
-- Create: `src/tskmon/metrics.py`
-- Modify: `src/tskmon/api.py`
+- Create: `src/thump/metrics.py`
+- Modify: `src/thump/api.py`
 - Test: `tests/test_metrics.py`, `tests/test_api_observability.py`
 
 **Interfaces:**
 - Consumes: `evaluate`, `Config`, `CheckState`, `State`.
 - Produces: `render_metrics(config: Config, states: dict[str, CheckState], now: datetime, unknown_pings: int) -> str` (pure). Routes `GET /checks`, `GET /checks/{name}`, `GET /metrics`, all behind `Authorization: Bearer <admin_token>`.
 
-Also wires the `tskmon_unknown_ping_total` counter, which is incremented by the ingest 404 path from Task 7.
+Also wires the `thump_unknown_ping_total` counter, which is incremented by the ingest 404 path from Task 7.
 
 - [ ] **Step 1: Write the failing metrics test**
 
@@ -1927,20 +1927,20 @@ Create `tests/test_metrics.py`:
 ```python
 from datetime import datetime, timedelta, timezone
 
-from tskmon.config import parse_config
-from tskmon.metrics import render_metrics
-from tskmon.models import CheckState
+from thump.config import parse_config
+from thump.metrics import render_metrics
+from thump.models import CheckState
 
 YAML = """
 store: {driver: sqlite, dsn: ':memory:'}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: nightly-db-backup
     type: heartbeat
     interval: 24h
     grace: 1h
 """
-ENV = {"TSKMON_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "s3cret"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
 
@@ -1948,7 +1948,7 @@ def test_up_check_renders_1():
     cfg = parse_config(YAML, ENV)
     states = {"nightly-db-backup": CheckState(last_seen=T0, last_result_ok=True)}
     out = render_metrics(cfg, states, T0, unknown_pings=0)
-    assert 'tskmon_check_up{name="nightly-db-backup"} 1' in out
+    assert 'thump_check_up{name="nightly-db-backup"} 1' in out
 
 
 def test_down_check_renders_0():
@@ -1959,37 +1959,37 @@ def test_down_check_renders_0():
         )
     }
     out = render_metrics(cfg, states, T0, unknown_pings=0)
-    assert 'tskmon_check_up{name="nightly-db-backup"} 0' in out
+    assert 'thump_check_up{name="nightly-db-backup"} 0' in out
 
 
 def test_last_seen_is_a_unix_timestamp():
     cfg = parse_config(YAML, ENV)
     states = {"nightly-db-backup": CheckState(last_seen=T0, last_result_ok=True)}
     out = render_metrics(cfg, states, T0, unknown_pings=0)
-    assert f'tskmon_check_last_seen_seconds{{name="nightly-db-backup"}} {T0.timestamp()}' in out
+    assert f'thump_check_last_seen_seconds{{name="nightly-db-backup"}} {T0.timestamp()}' in out
 
 
 def test_unknown_ping_counter_is_exposed():
     cfg = parse_config(YAML, ENV)
     out = render_metrics(cfg, {"nightly-db-backup": CheckState()}, T0, unknown_pings=3)
-    assert "tskmon_unknown_ping_total 3" in out
+    assert "thump_unknown_ping_total 3" in out
 
 
 def test_help_and_type_lines_are_present():
     cfg = parse_config(YAML, ENV)
     out = render_metrics(cfg, {"nightly-db-backup": CheckState()}, T0, unknown_pings=0)
-    assert "# HELP tskmon_check_up" in out
-    assert "# TYPE tskmon_check_up gauge" in out
+    assert "# HELP thump_check_up" in out
+    assert "# TYPE thump_check_up gauge" in out
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/test_metrics.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'tskmon.metrics'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'thump.metrics'`
 
 - [ ] **Step 3: Write the metrics renderer**
 
-Create `src/tskmon/metrics.py`:
+Create `src/thump/metrics.py`:
 
 ```python
 """Prometheus text rendering. Pure, like the evaluator: no I/O, `now` injected.
@@ -2002,9 +2002,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from tskmon.config import Config
-from tskmon.evaluator import evaluate
-from tskmon.models import CheckState, State
+from thump.config import Config
+from thump.evaluator import evaluate
+from thump.models import CheckState, State
 
 
 def _escape(v: str) -> str:
@@ -2018,29 +2018,29 @@ def render_metrics(
     unknown_pings: int,
 ) -> str:
     lines = [
-        "# HELP tskmon_check_up Whether the check is not DOWN (1) or DOWN (0).",
-        "# TYPE tskmon_check_up gauge",
+        "# HELP thump_check_up Whether the check is not DOWN (1) or DOWN (0).",
+        "# TYPE thump_check_up gauge",
     ]
     for check in config.checks:
         state = evaluate(check, states.get(check.name, CheckState()), now)
         up = 0 if state is State.DOWN else 1
-        lines.append(f'tskmon_check_up{{name="{_escape(check.name)}"}} {up}')
+        lines.append(f'thump_check_up{{name="{_escape(check.name)}"}} {up}')
 
     lines += [
-        "# HELP tskmon_check_last_seen_seconds Unix time of the last successful sighting.",
-        "# TYPE tskmon_check_last_seen_seconds gauge",
+        "# HELP thump_check_last_seen_seconds Unix time of the last successful sighting.",
+        "# TYPE thump_check_last_seen_seconds gauge",
     ]
     for check in config.checks:
         last_seen = states.get(check.name, CheckState()).last_seen
         if last_seen is not None:
             lines.append(
-                f'tskmon_check_last_seen_seconds{{name="{_escape(check.name)}"}} {last_seen.timestamp()}'
+                f'thump_check_last_seen_seconds{{name="{_escape(check.name)}"}} {last_seen.timestamp()}'
             )
 
     lines += [
-        "# HELP tskmon_unknown_ping_total Pings for checks that do not exist.",
-        "# TYPE tskmon_unknown_ping_total counter",
-        f"tskmon_unknown_ping_total {unknown_pings}",
+        "# HELP thump_unknown_ping_total Pings for checks that do not exist.",
+        "# TYPE thump_unknown_ping_total counter",
+        f"thump_unknown_ping_total {unknown_pings}",
         "",
     ]
     return "\n".join(lines)
@@ -2061,24 +2061,24 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from tskmon.api import build_app
-from tskmon.config import parse_config
-from tskmon.store.sqlite import SqliteStore
+from thump.api import build_app
+from thump.config import parse_config
+from thump.store.sqlite import SqliteStore
 
 YAML = """
 store: {driver: sqlite, dsn: ':memory:'}
 server:
   listen: ":8080"
-  secret: ${TSKMON_SECRET}
-  admin_token: ${TSKMON_ADMIN_TOKEN}
+  secret: ${THUMP_SECRET}
+  admin_token: ${THUMP_ADMIN_TOKEN}
   timezone: Asia/Kolkata
 checks:
   - name: nightly-db-backup
     type: heartbeat
     interval: 24h
 """
-NO_ADMIN_YAML = YAML.replace("  admin_token: ${TSKMON_ADMIN_TOKEN}\n", "")
-ENV = {"TSKMON_SECRET": "s3cret", "TSKMON_ADMIN_TOKEN": "admin-tok"}
+NO_ADMIN_YAML = YAML.replace("  admin_token: ${THUMP_ADMIN_TOKEN}\n", "")
+ENV = {"THUMP_SECRET": "s3cret", "THUMP_ADMIN_TOKEN": "admin-tok"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 AUTH = {"Authorization": "Bearer admin-tok"}
 
@@ -2149,7 +2149,7 @@ async def test_metrics_counts_unknown_pings(ctx):
     client.post("/ping/deadbeefdeadbeefdeadbeefdeadbeef")
 
     body = client.get("/metrics", headers=AUTH).text
-    assert "tskmon_unknown_ping_total 2" in body
+    assert "thump_unknown_ping_total 2" in body
 
 
 async def test_endpoints_are_DISABLED_when_no_admin_token_configured(tmp_path):
@@ -2171,7 +2171,7 @@ Expected: FAIL — 404s on `/checks` and `/metrics` (routes not defined)
 
 - [ ] **Step 7: Wire the routes and the counter**
 
-In `src/tskmon/api.py`, extend the imports:
+In `src/thump/api.py`, extend the imports:
 
 ```python
 import secrets
@@ -2179,7 +2179,7 @@ import secrets
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from tskmon.metrics import render_metrics
+from thump.metrics import render_metrics
 ```
 
 Inside `build_app`, immediately after `app.state.clock = clock`, add the counter:
@@ -2277,7 +2277,7 @@ Expected: 8 passed
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/tskmon/metrics.py src/tskmon/api.py tests/test_metrics.py tests/test_api_observability.py
+git add src/thump/metrics.py src/thump/api.py tests/test_metrics.py tests/test_api_observability.py
 git commit -m "feat: /checks and /metrics behind fail-closed bearer auth"
 ```
 
@@ -2286,7 +2286,7 @@ git commit -m "feat: /checks and /metrics behind fail-closed bearer auth"
 ### Task 10: The probe scheduler
 
 **Files:**
-- Create: `src/tskmon/scheduler.py`
+- Create: `src/thump/scheduler.py`
 - Test: `tests/test_scheduler.py`
 
 **Interfaces:**
@@ -2308,13 +2308,13 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-from tskmon.config import parse_config
-from tskmon.scheduler import Scheduler
-from tskmon.store.sqlite import SqliteStore
+from thump.config import parse_config
+from thump.scheduler import Scheduler
+from thump.store.sqlite import SqliteStore
 
 YAML = """
 store: {driver: sqlite, dsn: ':memory:'}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: internal-payments-api
     type: probe
@@ -2325,7 +2325,7 @@ checks:
     type: heartbeat
     interval: 24h
 """
-ENV = {"TSKMON_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "s3cret"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
 
@@ -2435,11 +2435,11 @@ async def test_run_probes_only_probe_checks_and_stops_on_cancel(store):
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `.venv/bin/pytest tests/test_scheduler.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'tskmon.scheduler'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'thump.scheduler'`
 
 - [ ] **Step 3: Write the implementation**
 
-Create `src/tskmon/scheduler.py`:
+Create `src/thump/scheduler.py`:
 
 ```python
 """Outbound prober. Reaches endpoints on the private network because IT LIVES
@@ -2458,11 +2458,11 @@ from datetime import datetime, timezone
 
 import httpx
 
-from tskmon.config import Config
-from tskmon.models import Check, CheckType, Event
-from tskmon.store.base import Store, StoreUnavailable
+from thump.config import Config
+from thump.models import Check, CheckType, Event
+from thump.store.base import Store, StoreUnavailable
 
-log = logging.getLogger("tskmon.scheduler")
+log = logging.getLogger("thump.scheduler")
 
 Clock = Callable[[], datetime]
 
@@ -2537,7 +2537,7 @@ Expected: 7 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/tskmon/scheduler.py tests/test_scheduler.py
+git add src/thump/scheduler.py tests/test_scheduler.py
 git commit -m "feat: async probe scheduler"
 ```
 
@@ -2546,12 +2546,12 @@ git commit -m "feat: async probe scheduler"
 ### Task 11: Entrypoint, container, and docs
 
 **Files:**
-- Create: `src/tskmon/main.py`, `Dockerfile`, `config.example.yaml`, `README.md`
+- Create: `src/thump/main.py`, `Dockerfile`, `config.example.yaml`, `README.md`
 - Test: `tests/test_main.py`
 
 **Interfaces:**
 - Consumes: everything.
-- Produces: `build_store(cfg: Config) -> Store`, `create_app(config_path: str | None = None) -> FastAPI`, and a `python -m tskmon.main` entrypoint.
+- Produces: `build_store(cfg: Config) -> Store`, `create_app(config_path: str | None = None) -> FastAPI`, and a `python -m thump.main` entrypoint.
 
 The lifespan connects the store, starts the `Scheduler` as a background task, and tears both down on shutdown.
 
@@ -2563,20 +2563,20 @@ Create `tests/test_main.py`:
 import pytest
 from fastapi.testclient import TestClient
 
-from tskmon.config import parse_config
-from tskmon.main import build_store
-from tskmon.store.redis import RedisStore
-from tskmon.store.sqlite import SqliteStore
+from thump.config import parse_config
+from thump.main import build_store
+from thump.store.redis import RedisStore
+from thump.store.sqlite import SqliteStore
 
 BASE = """
 store: {{driver: {driver}, dsn: '{dsn}'}}
-server: {{listen: ":8080", secret: ${{TSKMON_SECRET}}}}
+server: {{listen: ":8080", secret: ${{THUMP_SECRET}}}}
 checks:
   - name: nightly-db-backup
     type: heartbeat
     interval: 24h
 """
-ENV = {"TSKMON_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "s3cret"}
 
 
 def test_build_store_selects_sqlite():
@@ -2593,7 +2593,7 @@ def test_app_boots_end_to_end_and_serves_a_ping(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(BASE.format(driver="sqlite", dsn=str(tmp_path / "s.db")))
 
-    from tskmon.main import create_app
+    from thump.main import create_app
 
     app = create_app(str(path), env=ENV)
     with TestClient(app) as client:
@@ -2608,11 +2608,11 @@ def test_app_boots_end_to_end_and_serves_a_ping(tmp_path):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/test_main.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'tskmon.main'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'thump.main'`
 
 - [ ] **Step 3: Write the entrypoint**
 
-Create `src/tskmon/main.py`:
+Create `src/thump/main.py`:
 
 ```python
 """Wiring. Config is read once at boot; invalid config exits non-zero."""
@@ -2631,16 +2631,16 @@ import httpx
 import uvicorn
 from fastapi import FastAPI
 
-from tskmon.api import build_app
-from tskmon.config import Config, ConfigError, load_config
-from tskmon.scheduler import Scheduler
-from tskmon.store.base import Store
-from tskmon.store.redis import RedisStore
-from tskmon.store.sqlite import SqliteStore
+from thump.api import build_app
+from thump.config import Config, ConfigError, load_config
+from thump.scheduler import Scheduler
+from thump.store.base import Store
+from thump.store.redis import RedisStore
+from thump.store.sqlite import SqliteStore
 
-log = logging.getLogger("tskmon")
+log = logging.getLogger("thump")
 
-DEFAULT_CONFIG_PATH = "/etc/tskmon/config.yaml"
+DEFAULT_CONFIG_PATH = "/etc/thump/config.yaml"
 
 
 def build_store(cfg: Config) -> Store:
@@ -2650,7 +2650,7 @@ def build_store(cfg: Config) -> Store:
 
 
 def create_app(config_path: str | None = None, env: Mapping[str, str] | None = None) -> FastAPI:
-    path = config_path or os.environ.get("TSKMON_CONFIG", DEFAULT_CONFIG_PATH)
+    path = config_path or os.environ.get("THUMP_CONFIG", DEFAULT_CONFIG_PATH)
     config = load_config(path, env)
     store = build_store(config)
 
@@ -2676,7 +2676,7 @@ def create_app(config_path: str | None = None, env: Mapping[str, str] | None = N
 
 def main() -> None:
     logging.basicConfig(
-        level=os.environ.get("TSKMON_LOG_LEVEL", "INFO"),
+        level=os.environ.get("THUMP_LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     try:
@@ -2720,11 +2720,11 @@ RUN pip install --no-cache-dir --target=/deps .
 FROM python:3.12-slim
 COPY --from=build /deps /deps
 ENV PYTHONPATH=/deps
-ENV TSKMON_CONFIG=/etc/tskmon/config.yaml
-RUN useradd -r -u 10001 tskmon && mkdir -p /var/lib/tskmon && chown tskmon /var/lib/tskmon
-USER tskmon
+ENV THUMP_CONFIG=/etc/thump/config.yaml
+RUN useradd -r -u 10001 thump && mkdir -p /var/lib/thump && chown thump /var/lib/thump
+USER thump
 EXPOSE 8080
-CMD ["python", "-m", "tskmon.main"]
+CMD ["python", "-m", "thump.main"]
 ```
 
 Create `config.example.yaml`:
@@ -2732,7 +2732,7 @@ Create `config.example.yaml`:
 ```yaml
 store:
   driver: sqlite              # sqlite | redis
-  dsn: /var/lib/tskmon/state.db
+  dsn: /var/lib/thump/state.db
   # For multi-replica Kubernetes, use Redis — SQLite silently breaks
   # correctness across replicas:
   # driver: redis
@@ -2740,8 +2740,8 @@ store:
 
 server:
   listen: ":8080"
-  secret: ${TSKMON_SECRET}              # HMAC root for derived ping tokens
-  admin_token: ${TSKMON_ADMIN_TOKEN}    # omit to DISABLE /checks and /metrics
+  secret: ${THUMP_SECRET}              # HMAC root for derived ping tokens
+  admin_token: ${THUMP_ADMIN_TOKEN}    # omit to DISABLE /checks and /metrics
   timezone: UTC                         # display only; never affects evaluation
 
 defaults:
@@ -2766,10 +2766,10 @@ checks:
 - [ ] **Step 7: Build the image and smoke-test it**
 
 ```bash
-docker build -t tskmon:dev .
-docker run --rm -e TSKMON_SECRET=s3cret \
-  -v "$PWD/config.example.yaml:/etc/tskmon/config.yaml:ro" \
-  -p 8080:8080 tskmon:dev &
+docker build -t thump:dev .
+docker run --rm -e THUMP_SECRET=s3cret \
+  -v "$PWD/config.example.yaml:/etc/thump/config.yaml:ro" \
+  -p 8080:8080 thump:dev &
 sleep 3
 curl -fsS localhost:8080/healthz && echo
 curl -fsS localhost:8080/status && echo
@@ -2782,7 +2782,7 @@ Expected: `ok` then `up` (both checks are `pending`, which is healthy by design)
 Create `README.md`:
 
 ````markdown
-# tskmon
+# thump
 
 Uptime vendors can only ping public endpoints. That leaves two blind spots:
 
@@ -2790,15 +2790,15 @@ Uptime vendors can only ping public endpoints. That leaves two blind spots:
   "down" — the job simply didn't happen, on a host that is otherwise healthy.
 - **Private instances.** A service on `10.0.x.x` cannot be reached from the internet.
 
-`tskmon` runs *inside* your network, accepts heartbeats from cron jobs, probes private
+`thump` runs *inside* your network, accepts heartbeats from cron jobs, probes private
 endpoints, and re-exposes both as plain `200`/`503` URLs your existing uptime vendor
 already knows how to poll. It does the seeing; your vendor keeps doing the paging.
 
 ## Quick start
 
 ```sh
-docker run -e TSKMON_SECRET=$(openssl rand -hex 32) \
-  -v ./config.yaml:/etc/tskmon/config.yaml:ro -p 8080:8080 ghcr.io/you/tskmon
+docker run -e THUMP_SECRET=$(openssl rand -hex 32) \
+  -v ./config.yaml:/etc/thump/config.yaml:ro -p 8080:8080 ghcr.io/you/thump
 ```
 
 Add a heartbeat to a cron job — the URL is the credential, so there is nothing else to
@@ -2848,7 +2848,7 @@ token. If `admin_token` is unset, `/checks` and `/metrics` are **disabled**, not
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/tskmon/main.py tests/test_main.py Dockerfile config.example.yaml README.md
+git add src/thump/main.py tests/test_main.py Dockerfile config.example.yaml README.md
 git commit -m "feat: entrypoint, container, and docs"
 ```
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
-from tskmon.schedule import CronSchedule
+from thump.schedule import CronSchedule
 
 
 class State(StrEnum):

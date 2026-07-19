@@ -22,9 +22,9 @@ import sqlite3
 from collections.abc import Sequence
 from datetime import datetime
 
-from tskmon.models import CheckState, Event
-from tskmon.store.base import StoreUnavailable
-from tskmon.store.serde import iso, parse_dt
+from thump.models import CheckState, Event
+from thump.store.base import StoreUnavailable
+from thump.store.serde import iso, parse_dt
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS check_state (

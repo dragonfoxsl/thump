@@ -7,8 +7,8 @@ RUN pip install --no-cache-dir --target=/deps .
 FROM python:3.12-slim
 COPY --from=build /deps /deps
 ENV PYTHONPATH=/deps
-ENV TSKMON_CONFIG=/etc/tskmon/config.yaml
-RUN useradd -r -u 10001 tskmon && mkdir -p /var/lib/tskmon && chown tskmon /var/lib/tskmon
-USER tskmon
+ENV THUMP_CONFIG=/etc/thump/config.yaml
+RUN useradd -r -u 10001 thump && mkdir -p /var/lib/thump && chown thump /var/lib/thump
+USER thump
 EXPOSE 8080
-CMD ["python", "-m", "tskmon.main"]
+CMD ["python", "-m", "thump.main"]

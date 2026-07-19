@@ -3,24 +3,24 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tskmon.config import ConfigError, parse_config, parse_duration
-from tskmon.models import CheckType
-from tskmon.tokens import derive_token
+from thump.config import ConfigError, parse_config, parse_duration
+from thump.models import CheckType
+from thump.tokens import derive_token
 
 MINIMAL = """
 store:
   driver: sqlite
-  dsn: /var/lib/tskmon/state.db
+  dsn: /var/lib/thump/state.db
 server:
   listen: ":8080"
-  secret: ${TSKMON_SECRET}
+  secret: ${THUMP_SECRET}
 checks:
   - name: nightly-db-backup
     type: heartbeat
     interval: 24h
 """
 
-ENV = {"TSKMON_SECRET": "s3cret", "TSKMON_ADMIN_TOKEN": "admin-tok"}
+ENV = {"THUMP_SECRET": "s3cret", "THUMP_ADMIN_TOKEN": "admin-tok"}
 
 
 def test_parse_duration_units():
@@ -83,16 +83,16 @@ def test_timezone_defaults_to_utc():
 
 def test_timezone_is_parsed():
     text = MINIMAL.replace(
-        'secret: ${TSKMON_SECRET}',
-        'secret: ${TSKMON_SECRET}\n  timezone: Asia/Kolkata',
+        'secret: ${THUMP_SECRET}',
+        'secret: ${THUMP_SECRET}\n  timezone: Asia/Kolkata',
     )
     assert parse_config(text, ENV).server.timezone == ZoneInfo("Asia/Kolkata")
 
 
 def test_unknown_timezone_is_fatal():
     text = MINIMAL.replace(
-        'secret: ${TSKMON_SECRET}',
-        'secret: ${TSKMON_SECRET}\n  timezone: Mars/Olympus',
+        'secret: ${THUMP_SECRET}',
+        'secret: ${THUMP_SECRET}\n  timezone: Mars/Olympus',
     )
     with pytest.raises(ConfigError):
         parse_config(text, ENV)
@@ -105,7 +105,7 @@ def test_admin_token_is_optional_and_none_when_absent():
 def test_probe_check_is_parsed():
     text = """
 store: {driver: sqlite, dsn: ./s.db}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: internal-payments-api
     type: probe
@@ -130,7 +130,7 @@ def test_duplicate_check_names_are_fatal():
 def test_probe_without_url_is_fatal():
     text = """
 store: {driver: sqlite, dsn: ./s.db}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: p
     type: probe
@@ -154,7 +154,7 @@ def test_unknown_store_driver_is_fatal():
 def test_all_errors_are_reported_together():
     text = """
 store: {driver: mongodb, dsn: ./s.db}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: p
     type: probe
@@ -191,10 +191,10 @@ def test_boolean_is_rejected_as_integer():
 CRON = """
 store:
   driver: sqlite
-  dsn: /var/lib/tskmon/state.db
+  dsn: /var/lib/thump/state.db
 server:
   listen: ":8080"
-  secret: ${TSKMON_SECRET}
+  secret: ${THUMP_SECRET}
   timezone: America/New_York
 checks:
   - name: nightly-db-backup
@@ -235,7 +235,7 @@ def test_probe_may_not_carry_a_schedule():
 store:
   driver: sqlite
 server:
-  secret: ${TSKMON_SECRET}
+  secret: ${THUMP_SECRET}
 checks:
   - name: payments
     type: probe

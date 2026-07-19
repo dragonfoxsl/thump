@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-from tskmon.config import parse_config
-from tskmon.models import CheckType
-from tskmon.scheduler import Scheduler
-from tskmon.store.sqlite import SqliteStore
+from thump.config import parse_config
+from thump.models import CheckType
+from thump.scheduler import Scheduler
+from thump.store.sqlite import SqliteStore
 
 YAML = """
 store: {driver: sqlite, dsn: ':memory:'}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: internal-payments-api
     type: probe
@@ -23,7 +23,7 @@ checks:
     type: heartbeat
     interval: 24h
 """
-ENV = {"TSKMON_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "s3cret"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
 

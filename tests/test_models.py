@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from tskmon.models import Check, CheckState, CheckType, Event, State
+from thump.models import Check, CheckState, CheckType, Event, State
 
 
 def test_state_values():

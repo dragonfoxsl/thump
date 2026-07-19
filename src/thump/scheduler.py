@@ -14,11 +14,11 @@ from datetime import datetime, timezone
 
 import httpx
 
-from tskmon.config import Config
-from tskmon.models import Check, CheckType, Event
-from tskmon.store.base import Store, StoreUnavailable
+from thump.config import Config
+from thump.models import Check, CheckType, Event
+from thump.store.base import Store, StoreUnavailable
 
-log = logging.getLogger("tskmon.scheduler")
+log = logging.getLogger("thump.scheduler")
 
 Clock = Callable[[], datetime]
 

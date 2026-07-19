@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tskmon.schedule import CronSchedule, ScheduleError
+from thump.schedule import CronSchedule, ScheduleError
 
 UTC = ZoneInfo("UTC")
 NY = ZoneInfo("America/New_York")

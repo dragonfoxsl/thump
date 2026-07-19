@@ -11,9 +11,9 @@ from datetime import datetime
 import redis.asyncio as aioredis
 from redis.exceptions import RedisError
 
-from tskmon.models import CheckState, Event
-from tskmon.store.base import StoreUnavailable
-from tskmon.store.serde import iso, parse_dt
+from thump.models import CheckState, Event
+from thump.store.base import StoreUnavailable
+from thump.store.serde import iso, parse_dt
 
 
 class RedisStore:
@@ -22,10 +22,10 @@ class RedisStore:
         self._client = client
 
     def _key_state(self, name: str) -> str:
-        return f"tskmon:state:{name}"
+        return f"thump:state:{name}"
 
     def _key_events(self, name: str) -> str:
-        return f"tskmon:events:{name}"
+        return f"thump:events:{name}"
 
     def _db(self) -> aioredis.Redis:
         if self._client is None:

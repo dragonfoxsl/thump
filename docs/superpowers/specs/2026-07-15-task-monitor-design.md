@@ -117,12 +117,12 @@ as a ConfigMap or baked into the image.
 ```yaml
 store:
   driver: sqlite              # sqlite | redis
-  dsn: /var/lib/tskmon/state.db
+  dsn: /var/lib/thump/state.db
 
 server:
   listen: ":8080"
-  secret: ${TSKMON_SECRET}    # env-expanded; HMAC root for derived ping tokens
-  admin_token: ${TSKMON_ADMIN_TOKEN}   # bearer token for /checks and /metrics
+  secret: ${THUMP_SECRET}    # env-expanded; HMAC root for derived ping tokens
+  admin_token: ${THUMP_ADMIN_TOKEN}   # bearer token for /checks and /metrics
   timezone: Asia/Kolkata      # default UTC. DISPLAY ONLY — never affects evaluation.
 
 defaults:
@@ -155,7 +155,7 @@ checks:
 `timeout`, `history`, `failure_threshold`, and `token`. The common case needs no
 per-check config.
 
-**The secret lives in the environment, not the file.** `${TSKMON_SECRET}` is expanded
+**The secret lives in the environment, not the file.** `${THUMP_SECRET}` is expanded
 at load. This is what allows the config to be committed to git and mounted as a
 ConfigMap while the HMAC root lives in a k8s Secret. Without it, "commit your config"
 would be a security footgun.
@@ -257,8 +257,8 @@ nothing more.
 
 - `GET /checks`, `GET /checks/<name>` → real JSON: state, `last_seen`,
   `consecutive_failures`, event ring buffer.
-- `GET /metrics` → Prometheus: `tskmon_check_up{name}`,
-  `tskmon_check_last_seen_seconds{name}`, `tskmon_unknown_ping_total`.
+- `GET /metrics` → Prometheus: `thump_check_up{name}`,
+  `thump_check_last_seen_seconds{name}`, `thump_unknown_ping_total`.
 
 Auth is `Authorization: Bearer <server.admin_token>`. If `admin_token` is unset, these
 endpoints are **disabled** rather than left open — failing closed, because an
@@ -322,7 +322,7 @@ monitor that reports "all clear" while blind is the single worst bug this system
 have. An unreadable store therefore returns **`503`**, which pages, and the page is
 truthful: the monitoring is broken and nothing it was watching can be trusted.
 
-**A ping arrives for an unknown check.** `404`, and `tskmon_unknown_ping_total`
+**A ping arrives for an unknown check.** `404`, and `thump_unknown_ping_total`
 increments. This is a real operational signal: it usually means a cron job references a
 check that was renamed or never added, and that job currently believes it is monitored
 when it is not. Dropping it silently would hide precisely the misconfiguration worth

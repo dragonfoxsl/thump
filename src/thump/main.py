@@ -14,16 +14,16 @@ import httpx
 import uvicorn
 from fastapi import FastAPI
 
-from tskmon.api import build_app
-from tskmon.config import Config, ConfigError, load_config
-from tskmon.scheduler import Scheduler
-from tskmon.store.base import Store
-from tskmon.store.redis import RedisStore
-from tskmon.store.sqlite import SqliteStore
+from thump.api import build_app
+from thump.config import Config, ConfigError, load_config
+from thump.scheduler import Scheduler
+from thump.store.base import Store
+from thump.store.redis import RedisStore
+from thump.store.sqlite import SqliteStore
 
-log = logging.getLogger("tskmon")
+log = logging.getLogger("thump")
 
-DEFAULT_CONFIG_PATH = "/etc/tskmon/config.yaml"
+DEFAULT_CONFIG_PATH = "/etc/thump/config.yaml"
 
 
 def build_store(cfg: Config) -> Store:
@@ -33,7 +33,7 @@ def build_store(cfg: Config) -> Store:
 
 
 def create_app(config_path: str | None = None, env: Mapping[str, str] | None = None) -> FastAPI:
-    path = config_path or os.environ.get("TSKMON_CONFIG", DEFAULT_CONFIG_PATH)
+    path = config_path or os.environ.get("THUMP_CONFIG", DEFAULT_CONFIG_PATH)
     config = load_config(path, env)
     store = build_store(config)
 
@@ -59,7 +59,7 @@ def create_app(config_path: str | None = None, env: Mapping[str, str] | None = N
 
 def main() -> None:
     logging.basicConfig(
-        level=os.environ.get("TSKMON_LOG_LEVEL", "INFO"),
+        level=os.environ.get("THUMP_LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     try:

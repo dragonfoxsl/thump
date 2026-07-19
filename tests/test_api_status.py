@@ -3,14 +3,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from tskmon.api import build_app
-from tskmon.config import parse_config
-from tskmon.store.base import StoreUnavailable
-from tskmon.store.sqlite import SqliteStore
+from thump.api import build_app
+from thump.config import parse_config
+from thump.store.base import StoreUnavailable
+from thump.store.sqlite import SqliteStore
 
 YAML = """
 store: {driver: sqlite, dsn: ':memory:'}
-server: {listen: ":8080", secret: ${TSKMON_SECRET}}
+server: {listen: ":8080", secret: ${THUMP_SECRET}}
 checks:
   - name: nightly-db-backup
     type: heartbeat
@@ -21,7 +21,7 @@ checks:
     interval: 1h
     enabled: false
 """
-ENV = {"TSKMON_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "s3cret"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
 

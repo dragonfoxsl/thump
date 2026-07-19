@@ -3,24 +3,24 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from tskmon.api import build_app
-from tskmon.config import parse_config
-from tskmon.store.sqlite import SqliteStore
+from thump.api import build_app
+from thump.config import parse_config
+from thump.store.sqlite import SqliteStore
 
 YAML = """
 store: {driver: sqlite, dsn: ':memory:'}
 server:
   listen: ":8080"
-  secret: ${TSKMON_SECRET}
-  admin_token: ${TSKMON_ADMIN_TOKEN}
+  secret: ${THUMP_SECRET}
+  admin_token: ${THUMP_ADMIN_TOKEN}
   timezone: Asia/Kolkata
 checks:
   - name: nightly-db-backup
     type: heartbeat
     interval: 24h
 """
-NO_ADMIN_YAML = YAML.replace("  admin_token: ${TSKMON_ADMIN_TOKEN}\n", "")
-ENV = {"TSKMON_SECRET": "s3cret", "TSKMON_ADMIN_TOKEN": "admin-tok"}
+NO_ADMIN_YAML = YAML.replace("  admin_token: ${THUMP_ADMIN_TOKEN}\n", "")
+ENV = {"THUMP_SECRET": "s3cret", "THUMP_ADMIN_TOKEN": "admin-tok"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 AUTH = {"Authorization": "Bearer admin-tok"}
 
@@ -91,7 +91,7 @@ async def test_metrics_counts_unknown_pings(ctx):
     client.post("/ping/deadbeefdeadbeefdeadbeefdeadbeef")
 
     body = client.get("/metrics", headers=AUTH).text
-    assert "tskmon_unknown_ping_total 2" in body
+    assert "thump_unknown_ping_total 2" in body
 
 
 async def test_endpoints_are_DISABLED_when_no_admin_token_configured(tmp_path):

@@ -3,9 +3,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tskmon.evaluator import evaluate
-from tskmon.models import Check, CheckState, CheckType, State
-from tskmon.schedule import CronSchedule
+from thump.evaluator import evaluate
+from thump.models import Check, CheckState, CheckType, State
+from thump.schedule import CronSchedule
 
 NY = ZoneInfo("America/New_York")
 UTC_TZ = ZoneInfo("UTC")

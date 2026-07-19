@@ -4,7 +4,7 @@
 
 **Goal:** Close the LOW/Minor findings deferred from the task-monitor MVP whole-branch review: make `SqliteStore` non-blocking and fail-loud, make config numeric fields fail as `ConfigError` instead of crashing, and clean up duplicated helpers, runtime-invariant asserts, and an unused import.
 
-**Architecture:** Three independent, sequential tasks over the already-merged `tskmon` package. Task 1 rewrites `SqliteStore` so every operation runs in a worker thread on its own short-lived connection (removing the shared-connection + unlocked-`healthy()` hazards) and introduces a shared timestamp-serde module. Task 2 adds a numeric-validation helper mirroring the existing `_duration` error-collection pattern. Task 3 finishes the DRY cleanup and removes the fragile asserts. Every task keeps the existing suite green (99 tests today) and adds focused tests for the new behavior.
+**Architecture:** Three independent, sequential tasks over the already-merged `thump` package. Task 1 rewrites `SqliteStore` so every operation runs in a worker thread on its own short-lived connection (removing the shared-connection + unlocked-`healthy()` hazards) and introduces a shared timestamp-serde module. Task 2 adds a numeric-validation helper mirroring the existing `_duration` error-collection pattern. Task 3 finishes the DRY cleanup and removes the fragile asserts. Every task keeps the existing suite green (99 tests today) and adds focused tests for the new behavior.
 
 **Tech Stack:** Python 3.12+ (dev box runs 3.14), stdlib `sqlite3`, `asyncio.to_thread`, PyYAML, redis-py (async). Tests: pytest, pytest-asyncio (`asyncio_mode = auto`), fakeredis. Use `.venv/bin/pytest` — the project virtualenv already exists.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Package root:** `src/tskmon/`. Tests in `tests/`. Import as `from tskmon.x import y`.
+- **Package root:** `src/thump/`. Tests in `tests/`. Import as `from thump.x import y`.
 - **All datetimes are timezone-aware UTC.** Never `datetime.utcnow()`. Stored timestamps are ISO-8601 UTC; parsed timestamps are tz-aware UTC.
 - **`Store` errors fail LOUD:** every backend error (`sqlite3.Error`, `RedisError`) surfaces as `StoreUnavailable` — callers must never fail open. `connect()` is included in this contract.
 - **The event loop must not block:** blocking `sqlite3` work runs in `asyncio.to_thread`, never inline in an `async` method.
@@ -28,13 +28,13 @@
 
 | File | Change | Responsibility |
 |---|---|---|
-| `src/tskmon/store/serde.py` | Create (Task 1) | Shared `iso()` / `parse_dt()` timestamp (de)serialization for all stores. |
-| `src/tskmon/store/sqlite.py` | Rewrite internals (Task 1) | Per-operation connections offloaded via `asyncio.to_thread`; fail-loud `connect()`. Public interface unchanged. |
+| `src/thump/store/serde.py` | Create (Task 1) | Shared `iso()` / `parse_dt()` timestamp (de)serialization for all stores. |
+| `src/thump/store/sqlite.py` | Rewrite internals (Task 1) | Per-operation connections offloaded via `asyncio.to_thread`; fail-loud `connect()`. Public interface unchanged. |
 | `tests/store/test_sqlite.py` | Create (Task 1) | SQLite-specific behavior the parametrized conformance suite can't express (fail-loud `connect()`, non-blocking). |
-| `src/tskmon/config.py` | Modify (Task 2) | Add `_int()` helper; route `history`/`failure_threshold`/`expect_status` through it. |
+| `src/thump/config.py` | Modify (Task 2) | Add `_int()` helper; route `history`/`failure_threshold`/`expect_status` through it. |
 | `tests/test_config.py` | Modify (Task 2) | Add malformed-integer validation tests. |
-| `src/tskmon/store/redis.py` | Modify (Task 3) | Use `serde`; drop local `_iso`/`_parse`; replace bare `assert` with an explicit fail-loud raise. |
-| `src/tskmon/evaluator.py` | Modify (Task 3) | Replace the bare `assert` invariant with an explicit `ValueError`. |
+| `src/thump/store/redis.py` | Modify (Task 3) | Use `serde`; drop local `_iso`/`_parse`; replace bare `assert` with an explicit fail-loud raise. |
+| `src/thump/evaluator.py` | Modify (Task 3) | Replace the bare `assert` invariant with an explicit `ValueError`. |
 | `tests/test_evaluator.py` | Modify (Task 3) | Remove the unused `import pytest`. |
 
 ---
@@ -44,13 +44,13 @@
 Closes: sync-sqlite-in-async blocking the event loop, `connect()` not wrapping `sqlite3.Error`, and (half of) the duplicated `_iso`/`_parse` helpers.
 
 **Files:**
-- Create: `src/tskmon/store/serde.py`, `tests/store/test_sqlite.py`
-- Rewrite: `src/tskmon/store/sqlite.py`
+- Create: `src/thump/store/serde.py`, `tests/store/test_sqlite.py`
+- Rewrite: `src/thump/store/sqlite.py`
 
 **Interfaces:**
-- Consumes: `CheckState`, `Event` from `tskmon.models`; `StoreUnavailable` from `tskmon.store.base`.
+- Consumes: `CheckState`, `Event` from `thump.models`; `StoreUnavailable` from `thump.store.base`.
 - Produces:
-  - `tskmon.store.serde.iso(dt: datetime) -> str` and `tskmon.store.serde.parse_dt(s: str | None) -> datetime | None`.
+  - `thump.store.serde.iso(dt: datetime) -> str` and `thump.store.serde.parse_dt(s: str | None) -> datetime | None`.
   - `SqliteStore(dsn: str)` — same public async methods as today (`connect`, `close`, `healthy`, `get_state`, `get_states`, `record_success`, `record_failure`, `get_events`), same semantics, now non-blocking and fail-loud on `connect()`.
 
 **Semantics that must not change** (already asserted by the conformance suite): `record_success` sets `last_seen=at`, `last_result_ok=True`, `consecutive_failures=0`, pushes an event; `record_failure` sets `last_result_ok=False`, increments `consecutive_failures`, leaves `last_seen` unchanged, pushes an event; events are newest-first, trimmed to `history`; unknown name returns a default `CheckState()`; timestamps round-trip as tz-aware UTC.
@@ -66,8 +66,8 @@ Create `tests/store/test_sqlite.py`:
 
 import pytest
 
-from tskmon.store.base import StoreUnavailable
-from tskmon.store.sqlite import SqliteStore
+from thump.store.base import StoreUnavailable
+from thump.store.sqlite import SqliteStore
 
 
 async def test_connect_wraps_backend_errors_as_store_unavailable(tmp_path):
@@ -95,11 +95,11 @@ async def test_operations_run_without_a_persistent_shared_connection(tmp_path):
 - [ ] **Step 2: Run the new test to verify it fails against the current implementation**
 
 Run: `.venv/bin/pytest tests/store/test_sqlite.py -v`
-Expected: `test_connect_wraps_backend_errors_as_store_unavailable` FAILS — the current `connect()` (`src/tskmon/store/sqlite.py:51-56`) lets a raw `sqlite3.OperationalError` escape instead of `StoreUnavailable`. (The second test may pass or fail depending on the current shared-connection behavior; the first is the RED signal.)
+Expected: `test_connect_wraps_backend_errors_as_store_unavailable` FAILS — the current `connect()` (`src/thump/store/sqlite.py:51-56`) lets a raw `sqlite3.OperationalError` escape instead of `StoreUnavailable`. (The second test may pass or fail depending on the current shared-connection behavior; the first is the RED signal.)
 
 - [ ] **Step 3: Create the shared serde module**
 
-Create `src/tskmon/store/serde.py`:
+Create `src/thump/store/serde.py`:
 
 ```python
 """Timestamp (de)serialization shared by every Store implementation.
@@ -121,7 +121,7 @@ def parse_dt(s: str | None) -> datetime | None:
 
 - [ ] **Step 4: Rewrite `SqliteStore`**
 
-Replace the entire contents of `src/tskmon/store/sqlite.py` with:
+Replace the entire contents of `src/thump/store/sqlite.py` with:
 
 ```python
 """Default store: one file, stdlib, zero dependencies.
@@ -148,9 +148,9 @@ import sqlite3
 from collections.abc import Sequence
 from datetime import datetime
 
-from tskmon.models import CheckState, Event
-from tskmon.store.base import StoreUnavailable
-from tskmon.store.serde import iso, parse_dt
+from thump.models import CheckState, Event
+from thump.store.base import StoreUnavailable
+from thump.store.serde import iso, parse_dt
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS check_state (
@@ -335,7 +335,7 @@ Expected: all green (101 tests: prior 99 + 2 new).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/tskmon/store/serde.py src/tskmon/store/sqlite.py tests/store/test_sqlite.py
+git add src/thump/store/serde.py src/thump/store/sqlite.py tests/store/test_sqlite.py
 git commit -m "fix: SqliteStore runs off the event loop with per-op connections and fail-loud connect()
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -348,12 +348,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 Closes: `history`/`failure_threshold`/`expect_status` coerced with bare `int()`, which raises an unhandled `ValueError`/`TypeError` on malformed input instead of collecting a `ConfigError`.
 
 **Files:**
-- Modify: `src/tskmon/config.py`
+- Modify: `src/thump/config.py`
 - Test: `tests/test_config.py`
 
 **Interfaces:**
-- Consumes: the existing `errors: list[str]` accumulation pattern and `ConfigError` in `src/tskmon/config.py`.
-- Produces: a private `_int(raw, key, default, errors, where) -> int` helper, mirroring the existing `_duration()` helper (`src/tskmon/config.py:89-96`). No public signature changes.
+- Consumes: the existing `errors: list[str]` accumulation pattern and `ConfigError` in `src/thump/config.py`.
+- Produces: a private `_int(raw, key, default, errors, where) -> int` helper, mirroring the existing `_duration()` helper (`src/thump/config.py:89-96`). No public signature changes.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -390,7 +390,7 @@ Expected: FAIL — `test_malformed_integer_field_is_fatal_not_a_crash` and `test
 
 - [ ] **Step 3: Add the `_int` helper**
 
-In `src/tskmon/config.py`, add this function immediately after `_duration` (which ends at line 96):
+In `src/thump/config.py`, add this function immediately after `_duration` (which ends at line 96):
 
 ```python
 def _int(raw: dict[str, Any], key: str, default: int, errors: list[str], where: str) -> int:
@@ -410,7 +410,7 @@ def _int(raw: dict[str, Any], key: str, default: int, errors: list[str], where: 
 
 - [ ] **Step 4: Route the numeric fields through `_int`**
 
-In `src/tskmon/config.py`, replace the two defaults lines (currently `src/tskmon/config.py:134-135`):
+In `src/thump/config.py`, replace the two defaults lines (currently `src/thump/config.py:134-135`):
 
 ```python
     def_history = int(d.get("history", 100))
@@ -424,7 +424,7 @@ with:
     def_threshold = _int(d, "failure_threshold", 2, errors, "defaults.failure_threshold")
 ```
 
-Then, in the `Check(...)` construction (currently `src/tskmon/config.py:175-180`), replace these three lines:
+Then, in the `Check(...)` construction (currently `src/thump/config.py:175-180`), replace these three lines:
 
 ```python
                 history=int(raw.get("history", def_history)),
@@ -461,7 +461,7 @@ Expected: all green (104 tests: 101 + 3 new).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/tskmon/config.py tests/test_config.py
+git add src/thump/config.py tests/test_config.py
 git commit -m "fix: config rejects malformed integer fields as ConfigError instead of crashing
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -474,23 +474,23 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 Closes: duplicated `_iso`/`_parse` in `redis.py` (the other half of the DRY finding), bare `assert` used as a runtime invariant in `redis.py` and `evaluator.py` (both vanish under `python -O`), and an unused `import pytest`.
 
 **Files:**
-- Modify: `src/tskmon/store/redis.py`, `src/tskmon/evaluator.py`, `tests/test_evaluator.py`
+- Modify: `src/thump/store/redis.py`, `src/thump/evaluator.py`, `tests/test_evaluator.py`
 
 **Interfaces:**
-- Consumes: `tskmon.store.serde.iso` / `parse_dt` (created in Task 1).
+- Consumes: `thump.store.serde.iso` / `parse_dt` (created in Task 1).
 - Produces: no signature changes. Behavior is identical for valid data; the only behavior change is that two "impossible" states now raise an explicit, `-O`-proof error instead of an assertion.
 
 - [ ] **Step 1: Point `redis.py` at the shared serde and remove its local copies**
 
-In `src/tskmon/store/redis.py`:
+In `src/thump/store/redis.py`:
 
-Add the serde import next to the existing store imports (the file currently imports `from tskmon.store.base import StoreUnavailable`):
+Add the serde import next to the existing store imports (the file currently imports `from thump.store.base import StoreUnavailable`):
 
 ```python
-from tskmon.store.serde import iso, parse_dt
+from thump.store.serde import iso, parse_dt
 ```
 
-Delete the two local helper definitions (currently `src/tskmon/store/redis.py:18-23`):
+Delete the two local helper definitions (currently `src/thump/store/redis.py:18-23`):
 
 ```python
 def _iso(dt: datetime) -> str:
@@ -505,7 +505,7 @@ Then update every call site in the file: replace `_iso(` with `iso(` and `_parse
 
 - [ ] **Step 2: Replace the bare assert in `redis.py` with an explicit fail-loud raise**
 
-In `src/tskmon/store/redis.py`, the `get_events` loop currently contains (around `src/tskmon/store/redis.py:128-131`):
+In `src/thump/store/redis.py`, the `get_events` loop currently contains (around `src/thump/store/redis.py:128-131`):
 
 ```python
             at = parse_dt(d["at"])
@@ -524,7 +524,7 @@ In `src/tskmon/store/redis.py`, the `get_events` loop currently contains (around
 
 - [ ] **Step 3: Replace the bare assert in `evaluator.py` with an explicit raise**
 
-In `src/tskmon/evaluator.py`, the heartbeat branch currently contains (`src/tskmon/evaluator.py:25`):
+In `src/thump/evaluator.py`, the heartbeat branch currently contains (`src/thump/evaluator.py:25`):
 
 ```python
         assert state.last_seen is not None  # implied by last_result_ok is True
@@ -566,7 +566,7 @@ Expected: all green (104 tests, unchanged count — this task adds no tests).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/tskmon/store/redis.py src/tskmon/evaluator.py tests/test_evaluator.py
+git add src/thump/store/redis.py src/thump/evaluator.py tests/test_evaluator.py
 git commit -m "refactor: share timestamp serde, replace -O-fragile asserts, drop unused import
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"

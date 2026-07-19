@@ -2,8 +2,8 @@
 
 import pytest
 
-from tskmon.store.base import StoreUnavailable
-from tskmon.store.sqlite import SqliteStore
+from thump.store.base import StoreUnavailable
+from thump.store.sqlite import SqliteStore
 
 
 async def test_connect_wraps_backend_errors_as_store_unavailable(tmp_path):

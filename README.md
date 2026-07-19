@@ -1,4 +1,4 @@
-# tskmon
+# thump
 
 Uptime vendors can only ping public endpoints. That leaves two blind spots:
 
@@ -6,15 +6,15 @@ Uptime vendors can only ping public endpoints. That leaves two blind spots:
   "down" — the job simply didn't happen, on a host that is otherwise healthy.
 - **Private instances.** A service on `10.0.x.x` cannot be reached from the internet.
 
-`tskmon` runs *inside* your network, accepts heartbeats from cron jobs, probes private
+`thump` runs *inside* your network, accepts heartbeats from cron jobs, probes private
 endpoints, and re-exposes both as plain `200`/`503` URLs your existing uptime vendor
 already knows how to poll. It does the seeing; your vendor keeps doing the paging.
 
 ## Quick start
 
 ```sh
-docker run -e TSKMON_SECRET=$(openssl rand -hex 32) \
-  -v ./config.yaml:/etc/tskmon/config.yaml:ro -p 8080:8080 ghcr.io/you/tskmon
+docker run -e THUMP_SECRET=$(openssl rand -hex 32) \
+  -v ./config.yaml:/etc/thump/config.yaml:ro -p 8080:8080 ghcr.io/you/thump
 ```
 
 Add a heartbeat to a cron job — the URL is the credential, so there is nothing else to
@@ -28,7 +28,7 @@ plumb in:
 Then point one upstream monitor per check at `https://mon.example.com/status/<name>`, so
 the page you get at 3am says *which* check tripped.
 
-Get a check's token from `/checks` (requires `admin_token`; set `TSKMON_ADMIN_TOKEN` and
+Get a check's token from `/checks` (requires `admin_token`; set `THUMP_ADMIN_TOKEN` and
 uncomment `admin_token` in `config.yaml` to enable it — it's disabled by default), or
 derive it yourself: `HMAC-SHA256(secret, check_name)`, first 32 hex chars.
 
@@ -109,8 +109,8 @@ The editable install is not optional. `pytest` sets `pythonpath = ["src"]` in
 stays invisible until you run something directly:
 
 ```sh
-.venv/bin/python -c "import tskmon"   # ModuleNotFoundError if the install is stale
+.venv/bin/python -c "import thump"   # ModuleNotFoundError if the install is stale
 ```
 
-If that fails while `pip list` still shows `tskmon`, the install recorded its metadata
+If that fails while `pip list` still shows `thump`, the install recorded its metadata
 without writing a path hook. Re-run `pip install -e '.[dev]'`.

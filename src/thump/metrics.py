@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from tskmon.config import Config
-from tskmon.evaluator import evaluate
-from tskmon.models import CheckState, State
+from thump.config import Config
+from thump.evaluator import evaluate
+from thump.models import CheckState, State
 
 
 def _escape(v: str) -> str:
@@ -24,29 +24,29 @@ def render_metrics(
     unknown_pings: int,
 ) -> str:
     lines = [
-        "# HELP tskmon_check_up Whether the check is not DOWN (1) or DOWN (0).",
-        "# TYPE tskmon_check_up gauge",
+        "# HELP thump_check_up Whether the check is not DOWN (1) or DOWN (0).",
+        "# TYPE thump_check_up gauge",
     ]
     for check in config.checks:
         state = evaluate(check, states.get(check.name, CheckState()), now)
         up = 0 if state is State.DOWN else 1
-        lines.append(f'tskmon_check_up{{name="{_escape(check.name)}"}} {up}')
+        lines.append(f'thump_check_up{{name="{_escape(check.name)}"}} {up}')
 
     lines += [
-        "# HELP tskmon_check_last_seen_seconds Unix time of the last successful sighting.",
-        "# TYPE tskmon_check_last_seen_seconds gauge",
+        "# HELP thump_check_last_seen_seconds Unix time of the last successful sighting.",
+        "# TYPE thump_check_last_seen_seconds gauge",
     ]
     for check in config.checks:
         last_seen = states.get(check.name, CheckState()).last_seen
         if last_seen is not None:
             lines.append(
-                f'tskmon_check_last_seen_seconds{{name="{_escape(check.name)}"}} {last_seen.timestamp()}'
+                f'thump_check_last_seen_seconds{{name="{_escape(check.name)}"}} {last_seen.timestamp()}'
             )
 
     lines += [
-        "# HELP tskmon_unknown_ping_total Pings for checks that do not exist.",
-        "# TYPE tskmon_unknown_ping_total counter",
-        f"tskmon_unknown_ping_total {unknown_pings}",
+        "# HELP thump_unknown_ping_total Pings for checks that do not exist.",
+        "# TYPE thump_unknown_ping_total counter",
+        f"thump_unknown_ping_total {unknown_pings}",
         "",
     ]
     return "\n".join(lines)

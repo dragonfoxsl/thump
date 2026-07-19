@@ -9,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 import fakeredis.aioredis
 import pytest
 
-from tskmon.models import Event
-from tskmon.store.redis import RedisStore
-from tskmon.store.sqlite import SqliteStore
+from thump.models import Event
+from thump.store.redis import RedisStore
+from thump.store.sqlite import SqliteStore
 
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
