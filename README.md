@@ -72,7 +72,16 @@ docker run -e THUMP_SECRET=$(openssl rand -hex 32) \
   -p 8080:8080 ghcr.io/dragonfoxsl/thump
 ```
 
-Images are published for `linux/amd64` and `linux/arm64`.
+Images are built by GitHub Actions and published to GHCR for `linux/amd64` and `linux/arm64`.
+
+| Tag | Points at |
+|---|---|
+| `latest` | newest commit on `main` |
+| `main` | same, by branch name |
+| `1.2.3`, `1.2` | a `v*` release tag |
+| `sha-<commit>` | one exact commit — use this if you want reproducible deploys |
+
+Every image is built from `uv.lock` and only published after the test suite passes on that commit.
 
 ### From source
 

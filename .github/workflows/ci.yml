@@ -46,6 +46,10 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    # Never publish an image whose tests failed. This also gates the PR-time
+    # build, which costs a little wall-clock and buys a guarantee that
+    # anything reaching GHCR passed the suite first.
+    needs: test
     permissions:
       contents: read
       packages: write
@@ -57,8 +61,10 @@ jobs:
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
+      # Fork PRs get a read-only token and must not publish, so logging in and
+      # pushing are both gated on the event being a push to this repo.
       - name: Log in to GHCR
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -74,16 +80,18 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=branch
-            type=sha
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
 
-      # Builds both arches on every run so an arch-specific break is caught by
-      # the PR that causes it, but only publishes on a version tag.
+      # Both arches build on every run, so an arch-specific break surfaces on
+      # the PR causing it. Pushes to main publish :main and :latest; version
+      # tags additionally publish semver. PRs build without publishing.
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
