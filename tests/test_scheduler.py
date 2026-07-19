@@ -1,10 +1,12 @@
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import httpx
 import pytest
 
 from tskmon.config import parse_config
+from tskmon.models import CheckType
 from tskmon.scheduler import Scheduler
 from tskmon.store.sqlite import SqliteStore
 
@@ -163,3 +165,17 @@ async def test_run_probes_only_probe_checks_and_stops_on_cancel(store):
     assert (await store.get_state("internal-payments-api")).last_result_ok is True
     # The heartbeat check is NOT probed — nothing to reach out to.
     assert (await store.get_state("nightly-db-backup")).last_result_ok is None
+
+
+async def test_run_rejects_a_probe_with_no_interval():
+    # Check.interval is timedelta | None since cron schedules landed, but
+    # _loop calls interval.total_seconds(). Config forbids a probe without an
+    # interval, so this is unreachable via YAML — fail loudly at startup
+    # rather than AttributeError on the first tick if that ever changes.
+    cfg = parse_config(YAML, ENV)
+    probe = next(c for c in cfg.checks if c.type is CheckType.PROBE)
+    broken = replace(probe, interval=None)
+    cfg = replace(cfg, checks=(broken,))
+    sched = Scheduler(cfg, SqliteStore(":memory:"), client_returning(200))
+    with pytest.raises(ValueError, match="interval"):
+        await sched.run()

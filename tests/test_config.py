@@ -186,3 +186,78 @@ def test_boolean_is_rejected_as_integer():
     text = MINIMAL + "    failure_threshold: true\n"
     with pytest.raises(ConfigError):
         parse_config(text, ENV)
+
+
+CRON = """
+store:
+  driver: sqlite
+  dsn: /var/lib/tskmon/state.db
+server:
+  listen: ":8080"
+  secret: ${TSKMON_SECRET}
+  timezone: America/New_York
+checks:
+  - name: nightly-db-backup
+    type: heartbeat
+    schedule: "0 2 * * *"
+    grace: 30m
+"""
+
+
+def test_schedule_is_parsed_against_the_server_timezone():
+    cfg = parse_config(CRON, ENV)
+    check = cfg.checks[0]
+    assert check.schedule is not None
+    assert check.schedule.expr == "0 2 * * *"
+    assert check.schedule.tz == ZoneInfo("America/New_York")
+    assert check.interval is None
+
+
+def test_heartbeat_with_neither_interval_nor_schedule_is_fatal():
+    text = CRON.replace('    schedule: "0 2 * * *"\n', "")
+    with pytest.raises(ConfigError) as exc:
+        parse_config(text, ENV)
+    assert any("interval or schedule" in e for e in exc.value.errors)
+
+
+def test_heartbeat_with_both_interval_and_schedule_is_fatal():
+    text = CRON.replace(
+        '    schedule: "0 2 * * *"\n',
+        '    schedule: "0 2 * * *"\n    interval: 24h\n',
+    )
+    with pytest.raises(ConfigError) as exc:
+        parse_config(text, ENV)
+    assert any("mutually exclusive" in e for e in exc.value.errors)
+
+
+def test_probe_may_not_carry_a_schedule():
+    text = """
+store:
+  driver: sqlite
+server:
+  secret: ${TSKMON_SECRET}
+checks:
+  - name: payments
+    type: probe
+    url: http://payments.internal/healthz
+    interval: 60s
+    schedule: "0 2 * * *"
+"""
+    with pytest.raises(ConfigError) as exc:
+        parse_config(text, ENV)
+    assert any("only valid for heartbeat" in e for e in exc.value.errors)
+
+
+def test_malformed_cron_expression_is_collected_as_a_config_error():
+    text = CRON.replace('"0 2 * * *"', '"not a cron"')
+    with pytest.raises(ConfigError) as exc:
+        parse_config(text, ENV)
+    assert any("cron expression" in e for e in exc.value.errors)
+
+
+def test_interval_based_heartbeats_still_have_no_schedule():
+    # Backward compatibility: the existing MINIMAL config is untouched.
+    cfg = parse_config(MINIMAL, ENV)
+    check = cfg.checks[0]
+    assert check.schedule is None
+    assert check.interval == timedelta(hours=24)

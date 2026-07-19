@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import yaml
 
 from tskmon.models import Check, CheckType
+from tskmon.schedule import CronSchedule, ScheduleError
 from tskmon.tokens import derive_token
 
 VALID_DRIVERS = ("sqlite", "redis")
@@ -175,10 +176,35 @@ def parse_config(text: str, env: Mapping[str, str]) -> Config:
         if ctype is CheckType.HEARTBEAT and url:
             errors.append(f"{where}: heartbeat checks must not have a url")
 
-        if "interval" not in raw:
-            errors.append(f"{where}: interval is required")
-            continue
-        interval = _duration(raw, "interval", timedelta(hours=1), errors, where)
+        has_interval = "interval" in raw
+        has_schedule = "schedule" in raw
+        schedule: CronSchedule | None = None
+
+        if ctype is CheckType.PROBE:
+            if has_schedule:
+                errors.append(f"{where}: schedule is only valid for heartbeat checks")
+            if not has_interval:
+                errors.append(f"{where}: interval is required")
+                continue
+        else:
+            if has_interval and has_schedule:
+                errors.append(f"{where}: interval and schedule are mutually exclusive")
+                continue
+            if not has_interval and not has_schedule:
+                errors.append(f"{where}: heartbeat requires either interval or schedule")
+                continue
+            if has_schedule:
+                try:
+                    schedule = CronSchedule.parse(str(raw["schedule"]), server.timezone)
+                except ScheduleError as e:
+                    errors.append(f"{where}: {e}")
+                    continue
+
+        interval = (
+            _duration(raw, "interval", timedelta(hours=1), errors, where)
+            if has_interval
+            else None
+        )
 
         checks.append(
             Check(
@@ -193,6 +219,7 @@ def parse_config(text: str, env: Mapping[str, str]) -> Config:
                 enabled=bool(raw.get("enabled", True)),
                 url=str(url) if url else None,
                 expect_status=_int(raw, "expect_status", 200, errors, where),
+                schedule=schedule,
             )
         )
 

@@ -48,6 +48,33 @@ derive it yourself: `HMAC-SHA256(secret, check_name)`, first 32 hex chars.
 nothing: the body is literally `up` or `down`. Internal topology lives behind the bearer
 token. If `admin_token` is unset, `/checks` and `/metrics` are **disabled**, not open.
 
+## Scheduling a heartbeat
+
+A heartbeat's deadline can be a duration or a cron expression:
+
+```yaml
+server:
+  timezone: Europe/London     # cron expressions are evaluated here
+
+checks:
+  - name: nightly-backup
+    type: heartbeat
+    schedule: "0 2 * * *"     # 02:00 local, every day
+    grace: 30m
+```
+
+`interval` and `schedule` are mutually exclusive on a heartbeat — setting both, or
+neither, is a config error. Probes always use `interval`, as a poll frequency.
+
+Prefer `schedule` for anything driven by cron. `interval: 24h` measures 24 hours from
+the *last ping*, so ordinary jitter walks the deadline forward until a healthy job
+pages you; it is wrong by an hour on both DST transitions; and it cannot express
+`0 2 * * 1-5` at all, because the Friday→Monday gap is 72 hours while every other gap
+is 24.
+
+A check with `schedule` is DOWN when the most recent occurrence whose grace has
+expired was not covered by a ping.
+
 ## Operational notes
 
 - **`pending` counts as healthy.** A newly deployed check reports `200` until its first
@@ -60,3 +87,11 @@ token. If `admin_token` is unset, `/checks` and `/metrics` are **disabled**, not
   a genuinely dead backup job will cause k8s to kill the monitor reporting it.
 - **Clock skew breaks heartbeats.** Every decision is a subtraction against the local
   clock. Depend on the host's NTP, and suspect the clock first if this misbehaves.
+- **A ping up to 60s early still counts.** If the cron host's clock runs slightly
+  ahead, a `0 2 * * *` job can check in at 01:59:30 — before its own occurrence. That
+  ping covers it. The tolerance is fixed and not configurable: clock skew is an
+  environmental defect with a fixed remedy (NTP), not a per-check policy.
+- **DST is handled by the schedule, not by you.** Occurrences are computed in
+  `server.timezone`, so a 25-hour day has 25 hourly occurrences and a spring-forward
+  day moves a missing `0 2 * * *` to 03:00 — matching cron itself. No grace padding is
+  needed for either transition.
