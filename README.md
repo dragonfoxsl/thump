@@ -95,3 +95,22 @@ expired was not covered by a ping.
   `server.timezone`, so a 25-hour day has 25 hourly occurrences and a spring-forward
   day moves a missing `0 2 * * *` to 03:00 — matching cron itself. No grace padding is
   needed for either transition.
+
+## Development
+
+```sh
+python -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/pytest
+```
+
+The editable install is not optional. `pytest` sets `pythonpath = ["src"]` in
+`pyproject.toml` and so passes without it, which means a missing or stale install
+stays invisible until you run something directly:
+
+```sh
+.venv/bin/python -c "import tskmon"   # ModuleNotFoundError if the install is stale
+```
+
+If that fails while `pip list` still shows `tskmon`, the install recorded its metadata
+without writing a path hook. Re-run `pip install -e '.[dev]'`.
