@@ -17,7 +17,15 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
     "fakeredis>=2.26",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "types-PyYAML>=6.0",
+    # Starlette's TestClient imports httpx2 in preference to httpx and warns
+    # when it has to fall back. Production still targets httpx; this only
+    # equips the test client with the transport it now expects.
+    "httpx2>=2.7",
 ]
 
 [build-system]
@@ -32,3 +40,28 @@ packages = ["src/thump"]
 # package, so a missing or stale editable install fails loudly instead of
 # being silently masked. Run `uv sync --extra dev` first.
 asyncio_mode = "auto"
+# Same fail-loud stance for warnings: a new deprecation is a failure to
+# triage now, not a line in the summary to scroll past. Add a targeted
+# `ignore::...` entry here when a warning is understood and deliberately kept.
+filterwarnings = ["error"]
+# Coverage is enforced, not just reported: the suite fails if it drops below
+# the floor, so the tests can't silently stop covering a new module. A subset
+# run (e.g. `pytest tests/store/`) will trip the floor — add `--no-cov` for
+# those. `uv run pytest` (what CI runs) is the full suite and stays green.
+addopts = "--cov=thump --cov-report=term-missing --cov-fail-under=90"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+# B008: FastAPI's `= Header(default=None)` is a call in a default argument by
+# design, not the bug B008 warns about.
+# UP017: the codebase uses `timezone.utc` throughout; not restyling to
+# `datetime.UTC` for its own sake.
+ignore = ["B008", "UP017"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/thump"]

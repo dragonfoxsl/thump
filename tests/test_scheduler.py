@@ -133,10 +133,85 @@ class _ExplodingStore:
         return getattr(self._inner, name)
 
 
+class _DenyingLeaseStore:
+    """Delegates to a real store but always refuses the probe lease, standing
+    in for a replica that is NOT the elected prober."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    async def acquire_probe_lease(self, holder, ttl):
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+class _StopLoop(Exception):
+    """Breaks out of the otherwise-infinite _loop from an injected sleep."""
+
+
+async def test_loop_does_not_probe_when_the_lease_is_denied(store):
+    cfg = parse_config(YAML, ENV)
+    sched = Scheduler(
+        cfg, _DenyingLeaseStore(store), client_returning(200),
+        clock=lambda: T0, jitter=lambda: 0.0,
+    )
+
+    task = asyncio.create_task(sched.run())
+    await asyncio.sleep(0.05)  # a tick lands, but the lease is refused
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # Not the leader -> never reached out -> nothing observed.
+    assert (await store.get_state("internal-payments-api")).last_result_ok is None
+
+
+async def test_first_tick_is_delayed_by_jitter(store):
+    cfg = parse_config(YAML, ENV)
+    sleeps: list[float] = []
+
+    async def capturing_sleep(d):
+        sleeps.append(d)
+        raise _StopLoop  # stop at the very first sleep: the startup jitter
+
+    sched = Scheduler(
+        cfg, store, client_returning(200), clock=lambda: T0,
+        jitter=lambda: 0.5, sleep=capturing_sleep,
+    )
+    with pytest.raises(_StopLoop):
+        await sched._loop(cfg.by_name["internal-payments-api"])
+
+    # 60s interval, capped, halved by the jitter draw of 0.5.
+    assert sleeps[0] == 0.5 * min(60.0, Scheduler.JITTER_CAP)
+
+
+async def test_interval_sleep_compensates_for_probe_duration(store):
+    cfg = parse_config(YAML, ENV)
+    sleeps: list[float] = []
+
+    async def capturing_sleep(d):
+        sleeps.append(d)
+        if len(sleeps) >= 2:  # jitter sleep, then the first real interval sleep
+            raise _StopLoop
+
+    ticks = iter([100.0, 110.0, 999.0])  # probe "takes" 10s of monotonic time
+    sched = Scheduler(
+        cfg, store, client_returning(200), clock=lambda: T0,
+        jitter=lambda: 0.0, sleep=capturing_sleep, monotonic=lambda: next(ticks),
+    )
+    with pytest.raises(_StopLoop):
+        await sched._loop(cfg.by_name["internal-payments-api"])
+
+    assert sleeps[0] == 0.0    # jitter draw of 0
+    assert sleeps[1] == 50.0   # 60s interval minus 10s spent probing
+
+
 async def test_run_survives_unexpected_non_store_error_and_still_cancels(store):
     cfg = parse_config(YAML, ENV)
     sched = Scheduler(
-        cfg, store, client_returning(200), clock=lambda: T0
+        cfg, store, client_returning(200), clock=lambda: T0, jitter=lambda: 0.0
     )
     sched._store = _ExplodingStore(store)
 
@@ -154,7 +229,7 @@ async def test_run_survives_unexpected_non_store_error_and_still_cancels(store):
 
 async def test_run_probes_only_probe_checks_and_stops_on_cancel(store):
     cfg = parse_config(YAML, ENV)
-    sched = Scheduler(cfg, store, client_returning(200), clock=lambda: T0)
+    sched = Scheduler(cfg, store, client_returning(200), clock=lambda: T0, jitter=lambda: 0.0)
 
     task = asyncio.create_task(sched.run())
     await asyncio.sleep(0.05)  # let the first immediate tick land

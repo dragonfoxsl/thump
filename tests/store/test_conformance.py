@@ -96,3 +96,10 @@ async def test_get_states_batches(store):
 
 async def test_healthy_is_true_when_connected(store):
     assert await store.healthy() is True
+
+
+async def test_probe_lease_is_granted_to_a_fresh_holder(store):
+    # Every store must let *someone* probe. SQLite (single process) always
+    # grants; Redis grants the first caller. Either way, a fresh store hands
+    # the lease out.
+    assert await store.acquire_probe_lease("holder-a", ttl=30.0) is True

@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from thump.config import Config
 from thump.evaluator import evaluate
 from thump.metrics import render_metrics
-from thump.models import Event, State
+from thump.models import Check, Event, State
 from thump.store.base import Store, StoreUnavailable
 
 MAX_BODY_BYTES = 4096
@@ -42,7 +42,7 @@ def build_app(config: Config, store: Store, clock: Clock = _utcnow) -> FastAPI:
         body = await request.body()
         return body[:MAX_BODY_BYTES].decode("utf-8", errors="replace")
 
-    def _lookup(token: str):
+    def _lookup(token: str) -> Check:
         check = config.by_token.get(token)
         if check is None:
             # A real operational signal: a cron job believes it is monitored

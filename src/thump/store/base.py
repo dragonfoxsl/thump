@@ -33,3 +33,17 @@ class Store(Protocol):
     ) -> None: ...
 
     async def get_events(self, name: str, limit: int) -> list[Event]: ...
+
+    async def acquire_probe_lease(self, holder: str, ttl: float) -> bool:
+        """Return True if `holder` may probe right now.
+
+        This is the single-prober seam. With multiple replicas sharing one
+        store, exactly one should reach out to a given endpoint per tick;
+        otherwise every replica probes it, multiplying outbound traffic and
+        writes. Redis backs a real lease (one holder at a time, expiring after
+        `ttl` seconds so a dead leader is replaced). SQLite is single-replica
+        by contract, so it grants unconditionally — there is no one to
+        coordinate with. Callers re-acquire each tick: the holder renews, a
+        follower is refused.
+        """
+        ...

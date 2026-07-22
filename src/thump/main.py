@@ -7,7 +7,7 @@ import contextlib
 import logging
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 
 import httpx
@@ -38,9 +38,17 @@ def create_app(config_path: str | None = None, env: Mapping[str, str] | None = N
     store = build_store(config)
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await store.connect()
-        client = httpx.AsyncClient()
+        client = httpx.AsyncClient(
+            # A probe that silently followed a 302 to a login page would report
+            # a dead service as "up". The endpoint must answer for itself.
+            follow_redirects=False,
+            # Bound the pool so a burst of probes can't exhaust sockets. Each
+            # request still carries its own per-check timeout in probe_once.
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            timeout=httpx.Timeout(10.0),
+        )
         scheduler = Scheduler(config, store, client)
         task = asyncio.create_task(scheduler.run())
         try:

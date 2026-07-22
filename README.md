@@ -1,10 +1,6 @@
-<!-- Drop a banner at assets/logo.png and uncomment:
 <p align="center">
   <img src="https://raw.githubusercontent.com/dragonfoxsl/thump/main/assets/logo.png" alt="thump" width="520"/>
 </p>
--->
-
-<h1 align="center">thump</h1>
 
 <p align="center">
   <a href="https://github.com/dragonfoxsl/thump/actions/workflows/ci.yml">
@@ -14,7 +10,7 @@
   <img src="https://img.shields.io/badge/uv-package%20manager-DE5FE9?logo=python&logoColor=white" alt="uv package manager"/>
   <img src="https://img.shields.io/badge/FastAPI-server-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
   <img src="https://img.shields.io/badge/SQLite%20%7C%20Redis-storage-003B57?logo=sqlite&logoColor=white" alt="SQLite or Redis"/>
-  <img src="https://img.shields.io/badge/pytest-137%20tests-0A9EDC?logo=pytest&logoColor=white" alt="pytest"/>
+  <img src="https://img.shields.io/badge/pytest-145%20tests-0A9EDC?logo=pytest&logoColor=white" alt="pytest"/>
   <img src="https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker multi-arch"/>
 </p>
 
@@ -178,6 +174,7 @@ Prefer `schedule` for anything driven by cron. `interval: 24h` measures 24 hours
 
 - **`pending` counts as healthy.** A newly deployed check reports `200` until its first ping. Deliberate: the alternative pages you for every heartbeat on every deploy, and you would learn to ignore the alerts within a week.
 - **SQLite + multiple replicas is silently wrong.** The cron's ping and the vendor's poll can land on different pods that disagree. Use `driver: redis` for multi-replica, or a PersistentVolume with a single replica.
+- **Only one replica probes at a time.** With `driver: redis`, replicas share a probe lease, so a private endpoint is polled once per interval no matter how many pods you run — not once per pod. If the lease holder dies, another takes over within the lease TTL. SQLite is single-replica by contract and always probes. (Heartbeat pings are unaffected: they are ingested by whichever pod the cron reaches.)
 - **`/healthz` is not `/status`.** Never point a Kubernetes liveness probe at `/status`, or a genuinely dead backup job will cause k8s to kill the monitor reporting it.
 - **Clock skew breaks heartbeats.** Every decision is a subtraction against the local clock. Depend on the host's NTP, and suspect the clock first if this misbehaves.
 - **A ping up to 60s early still counts.** If the cron host's clock runs slightly ahead, a `0 2 * * *` job can check in at 01:59:30 — before its own occurrence. That ping covers it. The tolerance is fixed and not configurable: clock skew is an environmental defect with a fixed remedy (NTP), not a per-check policy.
@@ -201,7 +198,7 @@ Computing state at read time is what makes the correctness surface testable in m
 
 ```bash
 uv sync --extra dev     # creates .venv from uv.lock
-uv run pytest           # 137 tests
+uv run pytest           # 145 tests
 ```
 
 `.python-version` pins 3.12 — the same version the container ships, so a green suite can't hide a break on the Python your users actually run.

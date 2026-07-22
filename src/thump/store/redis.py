@@ -111,6 +111,28 @@ class RedisStore:
         except RedisError as e:
             raise StoreUnavailable(str(e)) from e
 
+    _LEASE_KEY = "thump:probe-leader"
+
+    async def acquire_probe_lease(self, holder: str, ttl: float) -> bool:
+        px = max(1, int(ttl * 1000))
+        try:
+            db = self._db()
+            # NX: become leader only if the seat is empty. It empties itself
+            # after `px` ms, so a leader that dies without renewing is replaced.
+            if await db.set(self._LEASE_KEY, holder, nx=True, px=px):
+                return True
+            # Seat taken — but possibly by us. If so, renew (push out expiry)
+            # and keep probing; if by someone else, stand down this tick.
+            current = await db.get(self._LEASE_KEY)
+            if isinstance(current, bytes):
+                current = current.decode()
+            if current == holder:
+                await db.set(self._LEASE_KEY, holder, px=px)
+                return True
+            return False
+        except RedisError as e:
+            raise StoreUnavailable(str(e)) from e
+
     async def get_events(self, name: str, limit: int) -> list[Event]:
         try:
             raws = await self._db().lrange(self._key_events(name), 0, limit - 1)

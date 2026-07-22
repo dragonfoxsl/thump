@@ -175,6 +175,12 @@ class SqliteStore:
     async def record_failure(self, name: str, at: datetime, event: Event, history: int) -> None:
         await self._record(name, at, event, history, ok=False)
 
+    async def acquire_probe_lease(self, holder: str, ttl: float) -> bool:
+        # Single replica by contract (see module docstring): this process is
+        # always the leader. A cross-process lock here would be theatre that
+        # only adds a stale-lock failure mode after an unclean restart.
+        return True
+
     async def get_events(self, name: str, limit: int) -> list[Event]:
         def _read() -> list[Event]:
             conn = self._open()

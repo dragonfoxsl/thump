@@ -32,6 +32,14 @@ jobs:
       # pyproject.toml. That is deliberate: a lockfile that drifts silently
       # defeats the point of shipping resolved versions in the image.
 
+      - name: Lint
+        run: uv run ruff check src tests
+
+      - name: Type-check
+        run: uv run mypy
+
+      # The coverage floor rides inside pytest (addopts --cov-fail-under), so
+      # this step also fails if coverage drops below it.
       - name: Run tests
         run: uv run pytest -q
 

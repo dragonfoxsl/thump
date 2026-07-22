@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 300" width="1040" height="300" role="img" aria-label="thump">
+  <defs>
+    <linearGradient id="pulse" x1="150" y1="0" x2="890" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF7A59"/>
+      <stop offset="0.55" stop-color="#FF3D6E"/>
+      <stop offset="1" stop-color="#FF2E8A"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- panel -->
+  <rect x="8" y="8" width="1024" height="284" rx="32" fill="#0B0E14" stroke="#1C2230" stroke-width="2"/>
+
+  <!-- heartbeat trace: flat, one clean QRS spike, flat -->
+  <path d="M150 92 H480 L503 104 L525 34 L547 150 L569 92 H890"
+        fill="none" stroke="url(#pulse)" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  <!-- peak marker -->
+  <circle cx="525" cy="34" r="8" fill="#FFF2EC" filter="url(#glow)"/>
+
+  <!-- wordmark -->
+  <text x="520" y="255" text-anchor="middle"
+        font-family="Fira Sans, DejaVu Sans, sans-serif" font-weight="800"
+        font-size="120" letter-spacing="1" fill="#F2F5F9">thump</text>
+</svg>

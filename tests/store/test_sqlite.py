@@ -15,6 +15,19 @@ async def test_connect_wraps_backend_errors_as_store_unavailable(tmp_path):
         await store.connect()
 
 
+async def test_probe_lease_is_granted_unconditionally(tmp_path):
+    # SQLite is single-replica by contract, so the sole process is always the
+    # leader. Even a second, different holder gets True: there is no one to
+    # coordinate with, and inventing a lock would only add a failure mode.
+    store = SqliteStore(str(tmp_path / "state.db"))
+    await store.connect()
+    try:
+        assert await store.acquire_probe_lease("whoever", ttl=30.0) is True
+        assert await store.acquire_probe_lease("someone-else", ttl=30.0) is True
+    finally:
+        await store.close()
+
+
 async def test_operations_run_without_a_persistent_shared_connection(tmp_path):
     # After connect(), each operation opens its own connection; a plain
     # record + read round-trips against the same on-disk file.
