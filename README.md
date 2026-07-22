@@ -256,7 +256,7 @@ uv run pytest           # 157 tests (154 + 3 real-Redis integration)
 
 ### Conventions
 
-Contributions follow a small set of rules — the ones already baked into the code and CI. The full list is in **[AGENTS.md](AGENTS.md)**; the essentials:
+Contributions follow a small set of rules — the ones already baked into the code and CI:
 
 - **Test-driven.** No production code without a failing test first; watch it fail for the right reason.
 - **Fail loud, never fail open.** Invalid config aborts boot; an unreachable store reports `down`, never "all clear"; warnings are errors.

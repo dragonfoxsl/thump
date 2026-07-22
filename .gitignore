@@ -5,3 +5,7 @@ __pycache__/
 
 # pytest-cov data file
 .coverage
+
+# Agent instruction files — kept local, not shared in the repo
+AGENTS.md
+CLAUDE.md
