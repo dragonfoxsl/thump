@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/uv-package%20manager-DE5FE9?logo=python&logoColor=white" alt="uv package manager"/>
   <img src="https://img.shields.io/badge/FastAPI-server-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
   <img src="https://img.shields.io/badge/SQLite%20%7C%20Redis-storage-003B57?logo=sqlite&logoColor=white" alt="SQLite or Redis"/>
-  <img src="https://img.shields.io/badge/pytest-145%20tests-0A9EDC?logo=pytest&logoColor=white" alt="pytest"/>
+  <img src="https://img.shields.io/badge/pytest-157%20tests-0A9EDC?logo=pytest&logoColor=white" alt="pytest"/>
   <img src="https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker multi-arch"/>
 </p>
 
@@ -242,7 +242,7 @@ Computing state at read time is what makes the correctness surface testable in m
 
 ```bash
 uv sync --extra dev     # creates .venv from uv.lock
-uv run pytest           # 145 tests
+uv run pytest           # 157 tests (154 + 3 real-Redis integration)
 ```
 
 `.python-version` pins 3.12 — the same version the container ships, so a green suite can't hide a break on the Python your users actually run.
@@ -253,6 +253,24 @@ uv run pytest           # 145 tests
 > the installed package, so a missing or stale install fails loudly rather than being
 > silently masked — which is exactly how a broken editable install once went unnoticed
 > here.
+
+### Conventions
+
+Contributions follow a small set of rules — the ones already baked into the code and CI. The full list is in **[AGENTS.md](AGENTS.md)**; the essentials:
+
+- **Test-driven.** No production code without a failing test first; watch it fail for the right reason.
+- **Fail loud, never fail open.** Invalid config aborts boot; an unreachable store reports `down`, never "all clear"; warnings are errors.
+- **Green gates before "done":** `ruff check src tests`, `mypy` (strict), and `pytest` (coverage floor 90%). All three run in CI.
+- **Keep the correctness core pure** (`evaluator`, `metrics`), and keep **both** stores passing the shared conformance suite — with a real-Redis test for the probe lease.
+- **Locked builds** (`uv.lock` committed, CI `--locked`), **SHA-pinned Actions**, and **signed images**.
+- **Comments say _why_.** Document deliberate decisions and their failure modes so they aren't "fixed" later.
+
+Run the full suite the way CI does:
+
+```bash
+uv run ruff check src tests && uv run mypy && \
+  REDIS_URL=redis://localhost:6379/15 uv run pytest   # start a throwaway Redis first
+```
 
 ### Building the image
 
