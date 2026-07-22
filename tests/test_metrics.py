@@ -53,3 +53,20 @@ def test_help_and_type_lines_are_present():
     out = render_metrics(cfg, {"nightly-db-backup": CheckState()}, T0, unknown_pings=0)
     assert "# HELP thump_check_up" in out
     assert "# TYPE thump_check_up gauge" in out
+
+
+def test_consecutive_failures_gauge_is_exposed():
+    cfg = parse_config(YAML, ENV)
+    states = {
+        "nightly-db-backup": CheckState(last_result_ok=False, consecutive_failures=3)
+    }
+    out = render_metrics(cfg, states, T0, unknown_pings=0)
+    assert 'thump_check_consecutive_failures{name="nightly-db-backup"} 3' in out
+
+
+def test_build_info_carries_the_version():
+    cfg = parse_config(YAML, ENV)
+    out = render_metrics(
+        cfg, {"nightly-db-backup": CheckState()}, T0, unknown_pings=0, version="1.2.3"
+    )
+    assert 'thump_build_info{version="1.2.3"} 1' in out

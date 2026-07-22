@@ -4,7 +4,8 @@ organizational one:
   /ping/*    ingest    — the token IS the credential
   /status/*  status    — UNAUTHENTICATED by necessity, therefore LEAKS NOTHING
   /checks,/metrics     — bearer token; this is where internal topology lives
-  /healthz   liveness  — the check on the checker. NOT /status.
+  /healthz   liveness  — is THIS process serving? NOT /status, NOT the store.
+  /readyz    readiness — is the store reachable? gates traffic, never restarts.
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable
 from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -23,6 +26,11 @@ from thump.models import Check, Event, State
 from thump.store.base import Store, StoreUnavailable
 
 MAX_BODY_BYTES = 4096
+
+try:
+    _VERSION = _pkg_version("thump")
+except PackageNotFoundError:  # pragma: no cover - only when running uninstalled
+    _VERSION = "unknown"
 
 Clock = Callable[[], datetime]
 
@@ -39,8 +47,18 @@ def build_app(config: Config, store: Store, clock: Clock = _utcnow) -> FastAPI:
     app.state.unknown_pings = 0
 
     async def _detail(request: Request) -> str:
-        body = await request.body()
-        return body[:MAX_BODY_BYTES].decode("utf-8", errors="replace")
+        # Bounded read: never buffer more than the cap (plus one transport
+        # chunk), so a huge or endless POST body cannot exhaust memory. The
+        # body is only diagnostic detail on the event — the ping itself is the
+        # signal — so we truncate rather than reject: a verbose job must still
+        # be able to check in.
+        buf = bytearray()
+        async for chunk in request.stream():
+            buf += chunk
+            if len(buf) >= MAX_BODY_BYTES:
+                del buf[MAX_BODY_BYTES:]
+                break
+        return buf.decode("utf-8", errors="replace")
 
     def _lookup(token: str) -> Check:
         check = config.by_token.get(token)
@@ -107,11 +125,21 @@ def build_app(config: Config, store: Store, clock: Clock = _utcnow) -> FastAPI:
 
     @app.get("/healthz")
     async def healthz() -> Response:
-        # The check ON THE CHECKER. Deliberately NOT /status: a genuinely-dead
-        # backup job must never cause k8s to kill the monitor reporting it.
+        # LIVENESS: is this process alive and serving? Deliberately NOT /status
+        # (a dead backup job must never restart the monitor) and deliberately
+        # NOT the store either — a Redis blip is fixed by waiting, not by
+        # restarting us into a CrashLoopBackOff. Point k8s livenessProbe here.
+        return Response(content="ok", media_type="text/plain")
+
+    @app.get("/readyz")
+    async def readyz() -> Response:
+        # READINESS: can we answer correctly right now? If the store is gone we
+        # cannot, so report not-ready and let k8s pull us from the Service's
+        # endpoints until it returns — without a restart. Point readinessProbe
+        # here.
         ok = await store.healthy()
         return Response(
-            content="ok" if ok else "store unavailable",
+            content="ready" if ok else "store unavailable",
             status_code=200 if ok else 503,
             media_type="text/plain",
         )
@@ -177,7 +205,7 @@ def build_app(config: Config, store: Store, clock: Clock = _utcnow) -> FastAPI:
     async def metrics(authorization: str | None = Header(default=None)) -> PlainTextResponse:
         _require_admin(authorization)
         states = await store.get_states([c.name for c in config.checks])
-        body = render_metrics(config, states, clock(), app.state.unknown_pings)
+        body = render_metrics(config, states, clock(), app.state.unknown_pings, version=_VERSION)
         return PlainTextResponse(body, media_type="text/plain; version=0.0.4")
 
     return app

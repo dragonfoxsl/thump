@@ -1,0 +1,170 @@
+# Reference Kubernetes deployment: thump (2 replicas) + a persistent Redis.
+#
+#   kubectl create secret generic thump-secret \
+#     --from-literal=THUMP_SECRET="$(openssl rand -hex 32)"
+#   kubectl apply -f deploy/kubernetes.yaml
+#
+# Two thump replicas share one Redis, so state is consistent across pods and
+# exactly one replica probes each endpoint (the probe lease). Redis keeps AOF
+# on and eviction off so state survives restarts and is never evicted.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: thump-config
+data:
+  config.yaml: |
+    store:
+      driver: redis
+      dsn: redis://thump-redis:6379/0
+    server:
+      listen: ":8080"
+      secret: ${THUMP_SECRET}          # substituted from the env var at boot
+      # admin_token: read it from the THUMP_ADMIN_TOKEN env var to enable
+      # /checks and /metrics (add it to the Secret and the container env)
+      timezone: UTC
+    defaults:
+      grace: 5m
+      timeout: 10s
+      history: 100
+      failure_threshold: 2
+    checks:
+      - name: nightly-db-backup
+        type: heartbeat
+        schedule: "0 2 * * *"
+        grace: 1h
+      - name: internal-service
+        type: probe
+        url: http://internal-service:8080/healthz
+        interval: 60s
+---
+# Create this out-of-band instead of committing a real secret:
+#   kubectl create secret generic thump-secret \
+#     --from-literal=THUMP_SECRET="$(openssl rand -hex 32)"
+# The stub below only documents the expected shape.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: thump-secret
+type: Opaque
+stringData:
+  THUMP_SECRET: "replace-me-with-openssl-rand-hex-32"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: thump-redis-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thump-redis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate            # a PVC-backed store must not run two pods at once
+  selector:
+    matchLabels: { app: thump-redis }
+  template:
+    metadata:
+      labels: { app: thump-redis }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args:
+            - redis-server
+            - --appendonly
+            - "yes"
+            - --maxmemory-policy
+            - noeviction
+          ports:
+            - containerPort: 6379
+          livenessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: thump-redis-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thump-redis
+spec:
+  selector: { app: thump-redis }
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thump
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: thump }
+  template:
+    metadata:
+      labels: { app: thump }
+    spec:
+      containers:
+        - name: thump
+          image: ghcr.io/dragonfoxsl/thump:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: THUMP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: thump-secret
+                  key: THUMP_SECRET
+          # Liveness: is the process serving? Never gate this on the store — a
+          # Redis blip must not restart a healthy pod.
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          # Readiness: is the store reachable? Not ready -> pulled from the
+          # Service until it recovers, no restart.
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - name: config
+              mountPath: /etc/thump
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: thump-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thump
+spec:
+  selector: { app: thump }
+  ports:
+    - port: 80
+      targetPort: 8080

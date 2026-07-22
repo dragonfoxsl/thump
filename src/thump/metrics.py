@@ -22,6 +22,8 @@ def render_metrics(
     states: dict[str, CheckState],
     now: datetime,
     unknown_pings: int,
+    *,
+    version: str = "unknown",
 ) -> str:
     lines = [
         "# HELP thump_check_up Whether the check is not DOWN (1) or DOWN (0).",
@@ -44,9 +46,22 @@ def render_metrics(
             )
 
     lines += [
+        "# HELP thump_check_consecutive_failures Consecutive failing observations.",
+        "# TYPE thump_check_consecutive_failures gauge",
+    ]
+    for check in config.checks:
+        failures = states.get(check.name, CheckState()).consecutive_failures
+        lines.append(
+            f'thump_check_consecutive_failures{{name="{_escape(check.name)}"}} {failures}'
+        )
+
+    lines += [
         "# HELP thump_unknown_ping_total Pings for checks that do not exist.",
         "# TYPE thump_unknown_ping_total counter",
         f"thump_unknown_ping_total {unknown_pings}",
+        "# HELP thump_build_info Build metadata; the value is always 1.",
+        "# TYPE thump_build_info gauge",
+        f'thump_build_info{{version="{_escape(version)}"}} 1',
         "",
     ]
     return "\n".join(lines)

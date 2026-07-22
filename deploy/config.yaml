@@ -1,0 +1,30 @@
+# Reference config for the bundled docker-compose.yml (Redis-backed).
+# `secret` is filled from the THUMP_SECRET environment variable at boot.
+store:
+  driver: redis
+  dsn: redis://redis:6379/0
+
+server:
+  listen: ":8080"
+  secret: ${THUMP_SECRET}
+  # admin_token: read it from the THUMP_ADMIN_TOKEN env var (see README) to
+  # enable /checks and /metrics; omit to keep them disabled
+  timezone: UTC                          # display only; also the frame for cron schedules
+
+defaults:
+  grace: 5m
+  timeout: 10s
+  history: 100
+  failure_threshold: 2
+
+checks:
+  - name: nightly-db-backup
+    type: heartbeat
+    schedule: "0 2 * * *"    # 02:00 daily, in server.timezone
+    grace: 1h
+
+  - name: internal-service
+    type: probe
+    url: http://internal-service:8080/healthz
+    interval: 60s
+    expect_status: 200

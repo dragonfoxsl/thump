@@ -146,8 +146,8 @@ jobs:
             -p 8080:8080 thump:ci
 
           for i in $(seq 1 30); do
-            if curl -fsS localhost:8080/healthz >/dev/null 2>&1; then break; fi
-            if [ "$i" = 30 ]; then docker logs thump; echo "never became healthy"; exit 1; fi
+            if curl -fsS localhost:8080/readyz >/dev/null 2>&1; then break; fi
+            if [ "$i" = 30 ]; then docker logs thump; echo "never became ready"; exit 1; fi
             sleep 1
           done
 

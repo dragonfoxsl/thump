@@ -79,6 +79,36 @@ Images are built by GitHub Actions and published to GHCR for `linux/amd64` and `
 
 Every image is built from `uv.lock` and only published after the test suite passes on that commit.
 
+### With docker-compose (thump + persistent Redis)
+
+The bundled [`docker-compose.yml`](docker-compose.yml) runs thump against a dedicated Redis with AOF on and eviction off — the durable setup. Edit [`deploy/config.yaml`](deploy/config.yaml) to declare your checks, then:
+
+```bash
+THUMP_SECRET=$(openssl rand -hex 32) docker compose up -d
+```
+
+### On Kubernetes
+
+[`deploy/kubernetes.yaml`](deploy/kubernetes.yaml) is a reference manifest: two thump replicas (sharing one Redis via the probe lease), a persistent Redis, `livenessProbe` on `/healthz` and `readinessProbe` on `/readyz`, and resource requests/limits.
+
+```bash
+kubectl create secret generic thump-secret \
+  --from-literal=THUMP_SECRET="$(openssl rand -hex 32)"
+kubectl apply -f deploy/kubernetes.yaml
+```
+
+> thump speaks plain HTTP. Terminate TLS at your ingress or reverse proxy — the ping token is the credential and travels in the URL. See [SECURITY.md](SECURITY.md).
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `THUMP_SECRET` | *(required)* | HMAC root for derived ping tokens |
+| `THUMP_CONFIG` | `/etc/thump/config.yaml` | Path to the config file |
+| `THUMP_ADMIN_TOKEN` | *(unset)* | Bearer for `/checks` and `/metrics`; unset disables them |
+| `THUMP_LOG_LEVEL` | `INFO` | Standard Python log level |
+| `THUMP_LOG_FORMAT` | `text` | `json` for one-line structured logs |
+
 ### From source
 
 ```bash
@@ -166,7 +196,8 @@ Prefer `schedule` for anything driven by cron. `interval: 24h` measures 24 hours
 | `GET /status` | none | `200` only if nothing is down |
 | `GET /checks` | bearer | real JSON: state, last seen, event history |
 | `GET /metrics` | bearer | Prometheus |
-| `GET /healthz` | none | liveness — the check on the checker |
+| `GET /healthz` | none | liveness — is this process serving? (k8s `livenessProbe`) |
+| `GET /readyz` | none | readiness — is the store reachable? (k8s `readinessProbe`) |
 
 `/status` is unauthenticated because your vendor must reach it, and therefore leaks nothing: the body is literally `up` or `down`. Internal topology lives behind the bearer token.
 
@@ -175,7 +206,8 @@ Prefer `schedule` for anything driven by cron. `interval: 24h` measures 24 hours
 - **`pending` counts as healthy.** A newly deployed check reports `200` until its first ping. Deliberate: the alternative pages you for every heartbeat on every deploy, and you would learn to ignore the alerts within a week.
 - **SQLite + multiple replicas is silently wrong.** The cron's ping and the vendor's poll can land on different pods that disagree. Use `driver: redis` for multi-replica, or a PersistentVolume with a single replica.
 - **Only one replica probes at a time.** With `driver: redis`, replicas share a probe lease, so a private endpoint is polled once per interval no matter how many pods you run — not once per pod. If the lease holder dies, another takes over within the lease TTL. SQLite is single-replica by contract and always probes. (Heartbeat pings are unaffected: they are ingested by whichever pod the cron reaches.)
-- **`/healthz` is not `/status`.** Never point a Kubernetes liveness probe at `/status`, or a genuinely dead backup job will cause k8s to kill the monitor reporting it.
+- **Redis must persist, or you go blind silently.** All state lives in Redis. If it restarts without persistence — or evicts thump's keys under `maxmemory` pressure — every check resets to `pending`, which reports `200`, so you learn nothing is being watched only when something breaks unnoticed. Give thump a **dedicated** Redis with AOF enabled and **no eviction** (`maxmemory-policy noeviction`); never point it at a shared cache tier that evicts. The bundled `docker-compose.yml` and k8s manifests are configured this way.
+- **`/healthz` is liveness, `/readyz` is readiness — and neither is `/status`.** `/healthz` answers "is this process alive?" and stays `200` even if the store is unreachable: a Redis blip is fixed by waiting, not by restarting into a CrashLoopBackOff, and a genuinely dead backup job must never restart the monitor reporting it. `/readyz` answers "can we serve correct answers?" — it goes `503` when the store is gone, so k8s pulls the pod from the Service until it recovers, no restart. Point `livenessProbe` at `/healthz` and `readinessProbe` at `/readyz`.
 - **Clock skew breaks heartbeats.** Every decision is a subtraction against the local clock. Depend on the host's NTP, and suspect the clock first if this misbehaves.
 - **A ping up to 60s early still counts.** If the cron host's clock runs slightly ahead, a `0 2 * * *` job can check in at 01:59:30 — before its own occurrence. That ping covers it. The tolerance is fixed and not configurable: clock skew is an environmental defect with a fixed remedy (NTP), not a per-check policy.
 - **DST is handled by the schedule, not by you.** Occurrences are computed in `server.timezone`, so a 25-hour day has 25 hourly occurrences and a spring-forward day moves a missing `0 2 * * *` to 03:00 — matching cron itself. No grace padding is needed for either transition.

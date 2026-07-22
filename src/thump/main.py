@@ -16,6 +16,7 @@ from fastapi import FastAPI
 
 from thump.api import build_app
 from thump.config import Config, ConfigError, load_config
+from thump.logconfig import build_formatter
 from thump.scheduler import Scheduler
 from thump.store.base import Store
 from thump.store.redis import RedisStore
@@ -66,9 +67,11 @@ def create_app(config_path: str | None = None, env: Mapping[str, str] | None = N
 
 
 def main() -> None:
+    handler = logging.StreamHandler()
+    handler.setFormatter(build_formatter(os.environ.get("THUMP_LOG_FORMAT", "text")))
     logging.basicConfig(
         level=os.environ.get("THUMP_LOG_LEVEL", "INFO"),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        handlers=[handler],
     )
     try:
         app = create_app()

@@ -53,4 +53,9 @@ RUN useradd -r -u 10001 thump \
 USER thump
 EXPOSE 8080
 
+# Liveness for plain `docker run` users (k8s uses the /healthz + /readyz probes
+# directly). No curl in the slim image, so drive it with stdlib Python.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).status == 200 else 1)"]
+
 CMD ["python", "-m", "thump.main"]

@@ -86,3 +86,21 @@ async def test_oversized_body_is_truncated_not_rejected(ctx):
     client.post(f"/ping/{token}", content=b"x" * 10_000)
     events = await store.get_events("nightly-db-backup", 10)
     assert len(events[0].detail) == 4096
+
+
+async def test_streamed_body_without_content_length_is_still_capped(ctx):
+    # A chunked upload has no Content-Length to check up front, so the read
+    # itself must be bounded — the server must not buffer the whole stream to
+    # then slice it. A generator body sends chunked; the stored detail is still
+    # capped, and the ping still counts.
+    cfg, store, client = ctx
+    token = cfg.by_name["nightly-db-backup"].token
+
+    def chunks():
+        for _ in range(1000):
+            yield b"x" * 1000  # ~1 MB total, streamed
+
+    r = client.post(f"/ping/{token}", content=chunks())
+    assert r.status_code == 200
+    events = await store.get_events("nightly-db-backup", 10)
+    assert len(events[0].detail) == 4096

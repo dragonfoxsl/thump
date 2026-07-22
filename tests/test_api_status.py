@@ -115,14 +115,36 @@ async def test_healthz_is_200_when_store_is_reachable(ctx):
     assert client.get("/healthz").status_code == 200
 
 
-async def test_healthz_is_503_when_store_is_gone(ctx):
+async def test_healthz_stays_200_even_when_the_store_is_gone(ctx):
+    # Liveness is about THIS process, not its dependencies. A Redis blip must
+    # not make k8s restart a pod that is alive and serving — a restart cannot
+    # fix Redis, and the flapping only removes a pod that would recover on its
+    # own. Dependency health is /readyz's job.
     _, store, client, _ = ctx
 
     async def unhealthy():
         return False
 
     store.healthy = unhealthy  # type: ignore[method-assign]
-    assert client.get("/healthz").status_code == 503
+    assert client.get("/healthz").status_code == 200
+
+
+async def test_readyz_is_200_when_store_is_reachable(ctx):
+    _, _, client, _ = ctx
+    assert client.get("/readyz").status_code == 200
+
+
+async def test_readyz_is_503_when_store_is_gone(ctx):
+    # Readiness reflects whether we can actually answer correctly. Store down ->
+    # not ready -> pulled from the Service's endpoints until it recovers, with
+    # no pod restart.
+    _, store, client, _ = ctx
+
+    async def unhealthy():
+        return False
+
+    store.healthy = unhealthy  # type: ignore[method-assign]
+    assert client.get("/readyz").status_code == 503
 
 
 async def test_healthz_is_not_status(ctx):

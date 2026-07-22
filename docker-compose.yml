@@ -1,0 +1,40 @@
+# Reference deployment: thump + a dedicated, persistent Redis.
+#
+#   THUMP_SECRET=$(openssl rand -hex 32) docker compose up -d
+#
+# Redis runs with AOF on and eviction OFF, so state survives a restart and is
+# never evicted out from under thump (see the Redis note in the README). Edit
+# deploy/config.yaml to declare your own checks.
+services:
+  thump:
+    image: ghcr.io/dragonfoxsl/thump:latest
+    # To run your local checkout instead of the published image: `build: .`
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      # Fails fast if unset, rather than booting with an empty HMAC root.
+      THUMP_SECRET: ${THUMP_SECRET:?set THUMP_SECRET, e.g. $(openssl rand -hex 32)}
+      # THUMP_ADMIN_TOKEN: ${THUMP_ADMIN_TOKEN}   # uncomment to enable /checks and /metrics
+    volumes:
+      - ./deploy/config.yaml:/etc/thump/config.yaml:ro
+    ports:
+      - "8080:8080"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # appendonly: survive restarts. noeviction: never drop thump's keys under
+    # memory pressure — a silent way to go blind. This is a dedicated Redis.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:
