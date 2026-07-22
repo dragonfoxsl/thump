@@ -6,7 +6,7 @@
 # Dependencies come from uv.lock, so the image ships the exact versions the
 # test suite ran against rather than whatever resolved at build time.
 
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS build
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS build
 
 # Copy rather than symlink: the runtime stage copies the venv out of this
 # stage, and symlinks into uv's cache would dangle there.
@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=uv-$TARGETARCH \
     uv sync --locked --no-editable --no-dev
 
 
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 # Copy the resolved venv rather than installing again: it is already resolved,
 # byte-compiled, and correct for this architecture.

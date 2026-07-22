@@ -245,7 +245,7 @@ uv sync --extra dev     # creates .venv from uv.lock
 uv run pytest           # 157 tests (154 + 3 real-Redis integration)
 ```
 
-`.python-version` pins 3.12 — the same version the container ships, so a green suite can't hide a break on the Python your users actually run.
+`.python-version` pins 3.14 — the same version the container ships, so a green suite can't hide a break on the Python your users actually run.
 
 `uv.lock` is committed and the image builds with `uv sync --locked`, so the container gets the exact versions the tests ran against. CI uses `--locked` too, which fails if the lockfile has drifted from `pyproject.toml`. After changing a dependency, commit the regenerated lockfile.
 
