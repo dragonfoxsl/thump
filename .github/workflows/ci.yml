@@ -15,6 +15,17 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A real Redis so the probe-lease integration tests run against actual
+    # SET NX PX expiry, not fakeredis's approximation of it.
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -39,8 +50,11 @@ jobs:
         run: uv run mypy
 
       # The coverage floor rides inside pytest (addopts --cov-fail-under), so
-      # this step also fails if coverage drops below it.
+      # this step also fails if coverage drops below it. REDIS_URL flips the
+      # real-Redis integration tests on (they skip themselves when it is unset).
       - name: Run tests
+        env:
+          REDIS_URL: redis://localhost:6379/15
         run: uv run pytest -q
 
       - name: Verify the example config actually loads
@@ -61,6 +75,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write        # keyless cosign signing via OIDC
+      attestations: write    # build provenance attestation
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +84,7 @@ jobs:
       # Without this, arm64 fails with "exec format error".
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
+      - uses: sigstore/cosign-installer@v3
 
       # Fork PRs get a read-only token and must not publish, so logging in and
       # pushing are both gated on the event being a push to this repo.
@@ -95,6 +112,7 @@ jobs:
       # the PR causing it. Pushes to main publish :main and :latest; version
       # tags additionally publish semver. PRs build without publishing.
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -104,6 +122,20 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Supply-chain attestations attached to the pushed image: a signed
+          # provenance statement (how it was built) and an SBOM (what's in it).
+          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+
+      # Keyless signature over the image digest, verifiable with:
+      #   cosign verify ghcr.io/<owner>/thump@<digest> \
+      #     --certificate-identity-regexp '^https://github.com/<owner>/thump/' \
+      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - name: Sign the image with cosign
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/${{ github.repository }}@${DIGEST}"
 
   smoke:
     # The unit suite never starts the real container. This does: it boots the

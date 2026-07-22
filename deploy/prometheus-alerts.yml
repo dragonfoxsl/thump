@@ -1,0 +1,41 @@
+# Prometheus alerting rules for thump. Load via `rule_files:` in prometheus.yml.
+#
+# Scrape config (thump exposes /metrics behind the admin bearer token):
+#
+#   scrape_configs:
+#     - job_name: thump
+#       metrics_path: /metrics
+#       authorization:
+#         credentials: "<THUMP_ADMIN_TOKEN>"
+#       static_configs:
+#         - targets: ["thump:8080"]
+groups:
+  - name: thump
+    rules:
+      - alert: ThumpCheckDown
+        expr: thump_check_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "thump check {{ $labels.name }} is DOWN"
+          description: "{{ $labels.name }} has reported down for over a minute."
+
+      - alert: ThumpProbeFlapping
+        expr: thump_check_consecutive_failures >= 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "thump check {{ $labels.name }} is failing probes"
+          description: "{{ $labels.name }} has had consecutive probe failures for 5m without going down — investigate before it does."
+
+      - alert: ThumpScrapeMissing
+        # thump itself is unreachable / not scrapeable — you are blind.
+        expr: up{job="thump"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "thump is not being scraped"
+          description: "Prometheus cannot scrape thump; the monitor of your monitors is down."

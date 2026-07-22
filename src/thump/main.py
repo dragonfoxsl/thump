@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import socket
 import sys
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -37,6 +38,13 @@ def create_app(config_path: str | None = None, env: Mapping[str, str] | None = N
     path = config_path or os.environ.get("THUMP_CONFIG", DEFAULT_CONFIG_PATH)
     config = load_config(path, env)
     store = build_store(config)
+    # How long a probe leader holds the lease before it must renew (seconds).
+    # Longer = fewer Redis round-trips but slower failover if the leader dies.
+    lease_ttl = float(os.environ.get("THUMP_LEASE_TTL", "60"))
+    # Identity recorded as the probe-lease holder. Defaults to the hostname so
+    # `redis-cli get thump:probe-leader` names the replica that is probing;
+    # override with THUMP_HOLDER when hostnames aren't distinct.
+    holder = os.environ.get("THUMP_HOLDER") or socket.gethostname()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -50,7 +58,7 @@ def create_app(config_path: str | None = None, env: Mapping[str, str] | None = N
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
             timeout=httpx.Timeout(10.0),
         )
-        scheduler = Scheduler(config, store, client)
+        scheduler = Scheduler(config, store, client, holder=holder, lease_ttl=lease_ttl)
         task = asyncio.create_task(scheduler.run())
         try:
             yield

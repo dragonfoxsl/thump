@@ -23,6 +23,19 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`SECURITY.md`** documenting the security model and reporting process.
 - Quality gates: `ruff`, `mypy --strict`, and a coverage floor, all enforced
   in CI.
+- **`THUMP_LEASE_TTL`** and **`THUMP_HOLDER`** env vars: tune probe-lease
+  failover speed, and name the probing replica (`redis-cli get
+  thump:probe-leader`).
+- **Real-Redis integration tests** (run in CI against a Redis service, and
+  locally via `REDIS_URL`) covering lease expiry, renewal, and takeover — the
+  distributed semantics fakeredis can't prove.
+- **`scripts/e2e-redis.sh`:** a container end-to-end (two replicas + Redis +
+  probe target) exercising heartbeats, probes, the lease, and leader failover.
+- **Supply chain:** published images are cosign-signed and carry an SBOM and
+  build provenance.
+- **Observability extras:** `deploy/grafana-dashboard.json` and
+  `deploy/prometheus-alerts.yml`.
+- **Dependabot** for Python (uv), GitHub Actions, and Docker base images.
 
 ### Changed
 

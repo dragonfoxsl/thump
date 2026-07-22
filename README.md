@@ -77,7 +77,13 @@ Images are built by GitHub Actions and published to GHCR for `linux/amd64` and `
 | `1.2.3`, `1.2` | a `v*` release tag |
 | `sha-<commit>` | one exact commit — use this if you want reproducible deploys |
 
-Every image is built from `uv.lock` and only published after the test suite passes on that commit.
+Every image is built from `uv.lock` and only published after the test suite passes on that commit. Published images are **cosign-signed** and carry an SBOM and build provenance. Verify before you run:
+
+```bash
+cosign verify ghcr.io/dragonfoxsl/thump:latest \
+  --certificate-identity-regexp '^https://github.com/dragonfoxsl/thump/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 ### With docker-compose (thump + persistent Redis)
 
@@ -108,6 +114,8 @@ kubectl apply -f deploy/kubernetes.yaml
 | `THUMP_ADMIN_TOKEN` | *(unset)* | Bearer for `/checks` and `/metrics`; unset disables them |
 | `THUMP_LOG_LEVEL` | `INFO` | Standard Python log level |
 | `THUMP_LOG_FORMAT` | `text` | `json` for one-line structured logs |
+| `THUMP_LEASE_TTL` | `60` | Seconds a probe leader holds the lease before renewing (Redis); lower = faster failover, more round-trips |
+| `THUMP_HOLDER` | hostname | Identity recorded as the probe-lease holder; `redis-cli get thump:probe-leader` names the probing replica |
 
 ### From source
 
@@ -200,6 +208,10 @@ Prefer `schedule` for anything driven by cron. `interval: 24h` measures 24 hours
 | `GET /readyz` | none | readiness — is the store reachable? (k8s `readinessProbe`) |
 
 `/status` is unauthenticated because your vendor must reach it, and therefore leaks nothing: the body is literally `up` or `down`. Internal topology lives behind the bearer token.
+
+### Dashboards and alerts
+
+`/metrics` exposes `thump_check_up`, `thump_check_consecutive_failures`, `thump_check_last_seen_seconds`, `thump_unknown_ping_total`, and `thump_build_info`. Ready-made [`deploy/grafana-dashboard.json`](deploy/grafana-dashboard.json) and [`deploy/prometheus-alerts.yml`](deploy/prometheus-alerts.yml) import straight in — the alert rules include one for thump itself being unscrapeable (the monitor of your monitors).
 
 ## Operational notes
 
