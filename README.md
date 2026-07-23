@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/dragonfoxsl/thump/main/assets/logo.png" alt="thump" width="520"/>
+  <img src="assets/logo.png" alt="thump" width="520"/>
 </p>
 
 <p align="center">
