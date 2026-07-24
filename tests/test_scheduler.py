@@ -232,12 +232,16 @@ async def test_run_probes_only_probe_checks_and_stops_on_cancel(store):
     sched = Scheduler(cfg, store, client_returning(200), clock=lambda: T0, jitter=lambda: 0.0)
 
     task = asyncio.create_task(sched.run())
-    await asyncio.sleep(0.05)  # let the first immediate tick land
+
+    async def wait_for_first_probe() -> None:
+        while (await store.get_state("internal-payments-api")).last_result_ok is not True:
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(wait_for_first_probe(), timeout=1.0)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert (await store.get_state("internal-payments-api")).last_result_ok is True
     # The heartbeat check is NOT probed — nothing to reach out to.
     assert (await store.get_state("nightly-db-backup")).last_result_ok is None
 
