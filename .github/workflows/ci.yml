@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  schedule:
+    - cron: "30 3 * * 5"
+  workflow_dispatch:
   push:
     branches: [main]
     tags: ["v*"]
@@ -89,10 +92,10 @@ jobs:
       # is worst-case. Bump the SHA (and the version comment) intentionally.
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
 
-      # Fork PRs get a read-only token and must not publish, so logging in and
-      # pushing are both gated on the event being a push to this repo.
+      # Scheduled and manual runs verify the image without publishing it. Only
+      # a push to main or a version tag may authenticate to GHCR and publish.
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push'
         uses: docker/login-action@06fb636fac595d6fb4b28a5dfcb21a6f5091859c  # v4.5.0
         with:
           registry: ghcr.io
@@ -113,29 +116,30 @@ jobs:
 
       # Both arches build on every run, so an arch-specific break surfaces on
       # the PR causing it. Pushes to main publish :main and :latest; version
-      # tags additionally publish semver. PRs build without publishing.
-      - name: Build and push
+      # tags additionally publish semver. PRs, schedules, and manual runs build
+      # without publishing.
+      - name: Build and optionally push
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # Supply-chain attestations attached to the pushed image: a signed
           # provenance statement (how it was built) and an SBOM (what's in it).
-          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
-          sbom: ${{ github.event_name != 'pull_request' }}
+          provenance: ${{ github.event_name == 'push' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name == 'push' }}
 
       # Keyless signature over the image digest, verifiable with:
       #   cosign verify ghcr.io/<owner>/thump@<digest> \
       #     --certificate-identity-regexp '^https://github.com/<owner>/thump/' \
       #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
       - name: Sign the image with cosign
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "ghcr.io/${{ github.repository }}@${DIGEST}"
