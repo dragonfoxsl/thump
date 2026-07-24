@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/uv-package%20manager-DE5FE9?logo=python&logoColor=white" alt="uv package manager"/>
   <img src="https://img.shields.io/badge/FastAPI-server-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
   <img src="https://img.shields.io/badge/SQLite%20%7C%20Redis-storage-003B57?logo=sqlite&logoColor=white" alt="SQLite or Redis"/>
-  <img src="https://img.shields.io/badge/pytest-157%20tests-0A9EDC?logo=pytest&logoColor=white" alt="pytest"/>
+  <img src="https://img.shields.io/badge/pytest-tested-0A9EDC?logo=pytest&logoColor=white" alt="pytest"/>
   <img src="https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker multi-arch"/>
 </p>
 
@@ -242,7 +242,7 @@ Computing state at read time is what makes the correctness surface testable in m
 
 ```bash
 uv sync --extra dev     # creates .venv from uv.lock
-uv run pytest           # 157 tests (154 + 3 real-Redis integration)
+uv run pytest           # real-Redis integration tests skip unless REDIS_URL is set
 ```
 
 `.python-version` pins 3.14 — the same version the container ships, so a green suite can't hide a break on the Python your users actually run.
@@ -294,6 +294,19 @@ CI handles this with `docker/setup-qemu-action`. Images publish to GHCR on a `v*
 | [cronsim](https://github.com/cuu508/cronsim) by [@cuu508](https://github.com/cuu508) | Cron expression parsing and DST-correct occurrence maths. Written for [Healthchecks.io](https://healthchecks.io) — the same problem domain, so its edge cases were found by exactly this use case. |
 | [FastAPI](https://fastapi.tiangolo.com) | HTTP surface |
 | [uv](https://docs.astral.sh/uv/) | Packaging and reproducible builds |
+
+---
+
+## Dependency maintenance
+
+Dependabot checks Python/uv, GitHub Actions, and Docker dependencies weekly.
+As of 2026-07-24, four update PRs are open: #6 (two grouped Python updates),
+#7 (`actions/checkout` 4.4.0 → 7.0.1), #8 (`docker/login-action` 3.7.0 →
+4.4.0), and #9 (`docker/setup-qemu-action` 3.7.0 → 4.2.0). PRs #6 and #8
+have green test, Docker, and smoke checks; #7 and #9 currently report no
+checks. Dependabot security alerts are disabled for this repository, so GitHub
+does not provide an open-alert count. Review action major-version updates and
+their pinned commit SHAs before merging.
 
 ---
 
