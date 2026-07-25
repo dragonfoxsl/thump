@@ -297,19 +297,6 @@ CI handles this with `docker/setup-qemu-action`. Images publish to GHCR on a `v*
 
 ---
 
-## Dependency maintenance
-
-Dependabot checks Python/uv, GitHub Actions, and Docker dependencies weekly.
-As of 2026-07-24, four update PRs are open: #6 (two grouped Python updates),
-#7 (`actions/checkout` 4.4.0 → 7.0.1), #8 (`docker/login-action` 3.7.0 →
-4.4.0), and #9 (`docker/setup-qemu-action` 3.7.0 → 4.2.0). PRs #6 and #8
-have green test, Docker, and smoke checks; #7 and #9 currently report no
-checks. Dependabot security alerts are disabled for this repository, so GitHub
-does not provide an open-alert count. Review action major-version updates and
-their pinned commit SHAs before merging.
-
----
-
 ## License
 
 MIT
