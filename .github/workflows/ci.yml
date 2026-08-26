@@ -86,7 +86,7 @@ jobs:
       # Registers QEMU so the arm64 stage can execute during the build.
       # Without this, arm64 fails with "exec format error".
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
       # Pinned to a commit SHA, not a mutable tag: this step runs in the job
       # that holds id-token: write and signs the image, so a hijacked tag here
       # is worst-case. Bump the SHA (and the version comment) intentionally.
@@ -151,7 +151,7 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
 
       - name: Build image (amd64 only — this job just runs it)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
