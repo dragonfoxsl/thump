@@ -15,7 +15,7 @@ checks:
     type: heartbeat
     interval: 24h
 """
-ENV = {"THUMP_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "test-secret-at-least-16-chars"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
 

@@ -62,20 +62,25 @@ class Scheduler:
         self._sleep = sleep
         self._monotonic = monotonic
         self._jitter = jitter
+        self._is_leader = False
+        self._lease_deadline = 0.0
+        self._lease_ready = asyncio.Event()
 
     async def probe_once(self, check: Check) -> bool:
         assert check.url is not None  # guaranteed by config validation
-        now = self._clock()
         try:
-            response = await self._client.get(
-                check.url, timeout=check.timeout.total_seconds()
-            )
-            ok = response.status_code == check.expect_status
-            detail = f"HTTP {response.status_code}"
+            async with self._client.stream(
+                "GET", check.url, timeout=check.timeout.total_seconds()
+            ) as response:
+                ok = response.status_code == check.expect_status
+                detail = f"HTTP {response.status_code}"
         except httpx.HTTPError as e:
             ok = False
             detail = f"{type(e).__name__}: {e}"
 
+        # Timestamp completion, not request start. Slow observations should not
+        # look older than work that completed while they were in flight.
+        now = self._clock()
         event = Event(
             at=now, kind="probe_ok" if ok else "probe_fail", detail=detail
         )
@@ -94,11 +99,14 @@ class Scheduler:
         while True:
             start = self._monotonic()
             try:
-                # Only the lease holder probes. With several replicas sharing a
-                # store, this is what keeps one endpoint from being polled N
-                # times a tick. SQLite grants unconditionally (single replica).
-                if await self._store.acquire_probe_lease(self._holder, self._lease_ttl):
+                # A dedicated task renews the process-wide lease independently
+                # of check cadence and slow HTTP requests.
+                if self._is_leader and start < self._lease_deadline:
                     await self.probe_once(check)
+                elif self._is_leader:
+                    # Never trust a locally cached leadership result beyond the
+                    # Redis TTL, even if the renewal request itself is stalled.
+                    self._is_leader = False
             except StoreUnavailable as e:
                 # Do not kill the loop: /healthz already reports the store, and
                 # k8s will restart us. Keep trying.
@@ -112,6 +120,31 @@ class Scheduler:
             # to this one's start, so a slow probe does not drag the cadence out.
             elapsed = self._monotonic() - start
             await self._sleep(max(0.0, interval - elapsed))
+
+    async def _lease_loop(self) -> None:
+        renewal_interval = self._lease_ttl / 3
+        while True:
+            attempt_started = self._monotonic()
+            try:
+                self._is_leader = await self._store.acquire_probe_lease(
+                    self._holder, self._lease_ttl
+                )
+                self._lease_deadline = (
+                    attempt_started + self._lease_ttl if self._is_leader else 0.0
+                )
+            except StoreUnavailable as e:
+                self._is_leader = False
+                self._lease_deadline = 0.0
+                log.error("probe lease: store unavailable: %s", e)
+            except Exception:
+                self._is_leader = False
+                self._lease_deadline = 0.0
+                log.exception("probe lease: unexpected error")
+            finally:
+                # Let run() start probe loops only after the initial election
+                # attempt has produced a definite leader/follower state.
+                self._lease_ready.set()
+            await self._sleep(renewal_interval)
 
     async def run(self) -> None:
         probes = [
@@ -130,5 +163,7 @@ class Scheduler:
         if not probes:
             await asyncio.Event().wait()  # nothing to do; block until cancelled
         async with asyncio.TaskGroup() as tg:
+            tg.create_task(self._lease_loop())
+            await self._lease_ready.wait()
             for check in probes:
                 tg.create_task(self._loop(check))

@@ -20,7 +20,7 @@ checks:
     interval: 24h
 """
 
-ENV = {"THUMP_SECRET": "s3cret", "THUMP_ADMIN_TOKEN": "admin-tok"}
+ENV = {"THUMP_SECRET": "test-secret-at-least-16-chars", "THUMP_ADMIN_TOKEN": "admin-token-at-least-16-chars"}
 
 
 def test_parse_duration_units():
@@ -38,7 +38,7 @@ def test_parse_duration_rejects_garbage():
 
 def test_env_expansion_keeps_secret_out_of_the_file():
     cfg = parse_config(MINIMAL, ENV)
-    assert cfg.server.secret == "s3cret"
+    assert cfg.server.secret == "test-secret-at-least-16-chars"
 
 
 def test_missing_env_var_is_fatal():
@@ -66,15 +66,15 @@ def test_per_check_override_beats_default():
 def test_token_is_derived_when_not_declared():
     cfg = parse_config(MINIMAL, ENV)
     c = cfg.by_name["nightly-db-backup"]
-    assert c.token == derive_token("s3cret", "nightly-db-backup")
+    assert c.token == derive_token("test-secret-at-least-16-chars", "nightly-db-backup")
     assert cfg.by_token[c.token] is c
 
 
 def test_explicit_token_overrides_derived():
-    text = MINIMAL + "    token: 7c9f2a\n"
+    text = MINIMAL + "    token: explicit-token-long-enough\n"
     cfg = parse_config(text, ENV)
-    assert cfg.by_name["nightly-db-backup"].token == "7c9f2a"
-    assert "7c9f2a" in cfg.by_token
+    assert cfg.by_name["nightly-db-backup"].token == "explicit-token-long-enough"
+    assert "explicit-token-long-enough" in cfg.by_token
 
 
 def test_timezone_defaults_to_utc():
@@ -186,6 +186,103 @@ def test_boolean_is_rejected_as_integer():
     text = MINIMAL + "    failure_threshold: true\n"
     with pytest.raises(ConfigError):
         parse_config(text, ENV)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "server: [not, a, mapping]",
+        "checks: {not: a-list}",
+        "- not-a-mapping",
+        "server: [",
+    ],
+)
+def test_malformed_yaml_and_shapes_raise_clean_config_error(text):
+    with pytest.raises(ConfigError):
+        parse_config(text, ENV)
+
+
+def test_duplicate_yaml_keys_are_rejected():
+    text = MINIMAL.replace(
+        '  listen: ":8080"', '  listen: ":8080"\n  listen: ":9090"'
+    )
+    with pytest.raises(ConfigError, match="duplicate key"):
+        parse_config(text, ENV)
+
+
+@pytest.mark.parametrize(
+    ("suffix", "field"),
+    [
+        ("    enabled: 'false'\n", "enabled"),
+        ("    history: '3'\n", "history"),
+        ("    interval: 0s\n", "interval"),
+        ("    timeout: 0s\n", "timeout"),
+        ("    grace: -1s\n", "grace"),
+        ("    history: 0\n", "history"),
+        ("    failure_threshold: 0\n", "failure_threshold"),
+        ("    expect_status: 99\n", "expect_status"),
+        ("    surprise: true\n", "surprise"),
+    ],
+)
+def test_invalid_exact_types_ranges_and_unknown_keys_are_rejected(suffix, field):
+    with pytest.raises(ConfigError) as exc:
+        parse_config(MINIMAL + suffix, ENV)
+    assert field in str(exc.value)
+
+
+def test_probe_url_must_be_http_or_https():
+    text = """
+server: {secret: ${THUMP_SECRET}}
+checks:
+  - {name: p, type: probe, url: 'ftp://example.com/a', interval: 1m}
+"""
+    with pytest.raises(ConfigError, match="http"):
+        parse_config(text, ENV)
+
+
+def test_effective_tokens_must_be_unique():
+    token = "duplicate-token-long-enough"
+    text = MINIMAL + f"  - {{name: other, type: heartbeat, interval: 1h, token: {token}}}\n"
+    text = text.replace("    interval: 24h\n", f"    interval: 24h\n    token: {token}\n")
+    with pytest.raises(ConfigError, match="token"):
+        parse_config(text, ENV)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "server.secret",
+        "server.admin_token",
+        "check.token",
+    ],
+)
+def test_security_credentials_have_a_minimum_length(field):
+    if field == "server.secret":
+        text = MINIMAL
+        env = {**ENV, "THUMP_SECRET": "short"}
+    elif field == "server.admin_token":
+        text = MINIMAL.replace(
+            "  secret: ${THUMP_SECRET}\n",
+            "  secret: ${THUMP_SECRET}\n  admin_token: short\n",
+        )
+        env = ENV
+    else:
+        text = MINIMAL + "    token: short\n"
+        env = ENV
+    with pytest.raises(ConfigError, match="at least 16"):
+        parse_config(text, env)
+
+
+@pytest.mark.parametrize("listen", ["localhost", ":0", ":70000", "1234", "host:not-a-port"])
+def test_invalid_listen_address_is_a_config_error(listen):
+    text = MINIMAL.replace('listen: ":8080"', f'listen: "{listen}"')
+    with pytest.raises(ConfigError, match="listen"):
+        parse_config(text, ENV)
+
+
+def test_unknown_top_level_key_is_rejected():
+    with pytest.raises(ConfigError, match="unknown"):
+        parse_config(MINIMAL + "surprise: true\n", ENV)
 
 
 CRON = """

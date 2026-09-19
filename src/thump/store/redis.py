@@ -6,14 +6,22 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
-from redis.exceptions import RedisError
+from redis.exceptions import RedisError, WatchError
 
 from thump.models import CheckState, Event
 from thump.store.base import StoreUnavailable
 from thump.store.serde import iso, parse_dt
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _timestamp_us(value: datetime) -> int:
+    """Return an exact, consistently comparable UTC timestamp."""
+    delta = value.astimezone(timezone.utc) - _EPOCH
+    return (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
 
 
 class RedisStore:
@@ -81,55 +89,116 @@ class RedisStore:
             )
         return out
 
-    async def _push_event(self, pipe: aioredis.client.Pipeline, name: str, event: Event, history: int) -> None:
-        pipe.lpush(
-            self._key_events(name),
-            json.dumps({"at": iso(event.at), "kind": event.kind, "detail": event.detail}),
-        )
-        pipe.ltrim(self._key_events(name), 0, history - 1)
+    async def _record(
+        self, name: str, at: datetime, event: Event, history: int, *, ok: bool
+    ) -> None:
+        state_key = self._key_state(name)
+        events_key = self._key_events(name)
+        observed_us = _timestamp_us(at)
+        payload = json.dumps({"at": iso(event.at), "kind": event.kind, "detail": event.detail})
+        try:
+            while True:
+                async with self._db().pipeline() as pipe:
+                    try:
+                        # Watch both structures: legacy state has no observation
+                        # marker, so its newest event supplies the upgrade
+                        # boundary without racing a concurrent writer.
+                        await pipe.watch(state_key, events_key)
+                        previous = await pipe.hget(state_key, "observation_at_us")
+                        if isinstance(previous, bytes):
+                            previous = previous.decode()
+                        if previous in (None, ""):
+                            newest = await pipe.lindex(events_key, 0)
+                            if isinstance(newest, bytes):
+                                newest = newest.decode()
+                            previous_at = None
+                            if newest:
+                                previous_at = parse_dt(json.loads(newest)["at"])
+                            if previous_at is None:
+                                last_seen = await pipe.hget(state_key, "last_seen")
+                                if isinstance(last_seen, bytes):
+                                    last_seen = last_seen.decode()
+                                previous_at = parse_dt(last_seen or None)
+                            if previous_at is not None:
+                                previous = str(_timestamp_us(previous_at))
+                        if previous not in (None, "") and observed_us < int(previous):
+                            # Preserve the observation in history while leaving
+                            # current state untouched. Also persist a lazily
+                            # derived legacy marker before this older event
+                            # becomes the list head.
+                            pipe.multi()  # type: ignore[no-untyped-call]
+                            pipe.hset(state_key, "observation_at_us", int(previous))
+                            pipe.lpush(events_key, payload)
+                            pipe.ltrim(events_key, 0, history - 1)
+                            await pipe.execute()
+                            return
+
+                        pipe.multi()  # type: ignore[no-untyped-call]
+                        if ok:
+                            pipe.hset(
+                                state_key,
+                                mapping={
+                                    "last_seen": iso(at),
+                                    "observation_at_us": observed_us,
+                                    "last_result_ok": "1",
+                                    "consecutive_failures": 0,
+                                },
+                            )
+                        else:
+                            # last_seen deliberately remains untouched: a failure is not a sighting.
+                            pipe.hset(
+                                state_key,
+                                mapping={"observation_at_us": observed_us, "last_result_ok": "0"},
+                            )
+                            pipe.hincrby(state_key, "consecutive_failures", 1)
+                        pipe.lpush(events_key, payload)
+                        pipe.ltrim(events_key, 0, history - 1)
+                        await pipe.execute()
+                        return
+                    except WatchError:
+                        # Another observation won the race. Re-read its timestamp
+                        # and either apply this observation or discard it as stale.
+                        continue
+        except RedisError as e:
+            raise StoreUnavailable(str(e)) from e
 
     async def record_success(self, name: str, at: datetime, event: Event, history: int) -> None:
-        try:
-            pipe = self._db().pipeline()
-            pipe.hset(
-                self._key_state(name),
-                mapping={"last_seen": iso(at), "last_result_ok": "1", "consecutive_failures": 0},
-            )
-            await self._push_event(pipe, name, event, history)
-            await pipe.execute()
-        except RedisError as e:
-            raise StoreUnavailable(str(e)) from e
+        await self._record(name, at, event, history, ok=True)
 
     async def record_failure(self, name: str, at: datetime, event: Event, history: int) -> None:
-        try:
-            pipe = self._db().pipeline()
-            # last_seen deliberately untouched: a failure is not a sighting.
-            pipe.hset(self._key_state(name), "last_result_ok", "0")
-            pipe.hincrby(self._key_state(name), "consecutive_failures", 1)
-            await self._push_event(pipe, name, event, history)
-            await pipe.execute()
-        except RedisError as e:
-            raise StoreUnavailable(str(e)) from e
+        await self._record(name, at, event, history, ok=False)
 
     _LEASE_KEY = "thump:probe-leader"
 
     async def acquire_probe_lease(self, holder: str, ttl: float) -> bool:
+        """Acquire or renew the process-wide lease without a read/write race.
+
+        WATCH makes expiry or takeover between the ownership check and renewal
+        invalidate the transaction. A stale holder can therefore never extend
+        a lease that belongs to another replica.
+        """
         px = max(1, int(ttl * 1000))
         try:
-            db = self._db()
-            # NX: become leader only if the seat is empty. It empties itself
-            # after `px` ms, so a leader that dies without renewing is replaced.
-            if await db.set(self._LEASE_KEY, holder, nx=True, px=px):
-                return True
-            # Seat taken — but possibly by us. If so, renew (push out expiry)
-            # and keep probing; if by someone else, stand down this tick.
-            current = await db.get(self._LEASE_KEY)
-            if isinstance(current, bytes):
-                current = current.decode()
-            if current == holder:
-                await db.set(self._LEASE_KEY, holder, px=px)
-                return True
-            return False
+            while True:
+                async with self._db().pipeline() as pipe:
+                    try:
+                        await pipe.watch(self._LEASE_KEY)
+                        current = await pipe.get(self._LEASE_KEY)
+                        if isinstance(current, bytes):
+                            current = current.decode()
+                        if current not in (None, holder):
+                            await pipe.unwatch()  # type: ignore[no-untyped-call]
+                            return False
+
+                        pipe.multi()  # type: ignore[no-untyped-call]
+                        if current is None:
+                            pipe.set(self._LEASE_KEY, holder, px=px)
+                        else:
+                            pipe.pexpire(self._LEASE_KEY, px)
+                        await pipe.execute()
+                        return True
+                    except WatchError:
+                        continue
         except RedisError as e:
             raise StoreUnavailable(str(e)) from e
 

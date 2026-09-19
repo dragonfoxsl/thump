@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 import os
 import socket
 import sys
@@ -40,7 +41,13 @@ def create_app(config_path: str | None = None, env: Mapping[str, str] | None = N
     store = build_store(config)
     # How long a probe leader holds the lease before it must renew (seconds).
     # Longer = fewer Redis round-trips but slower failover if the leader dies.
-    lease_ttl = float(os.environ.get("THUMP_LEASE_TTL", "60"))
+    lease_ttl_raw = os.environ.get("THUMP_LEASE_TTL", "60")
+    try:
+        lease_ttl = float(lease_ttl_raw)
+    except ValueError as e:
+        raise ConfigError(["THUMP_LEASE_TTL must be a positive finite number"]) from e
+    if not math.isfinite(lease_ttl) or lease_ttl <= 0:
+        raise ConfigError(["THUMP_LEASE_TTL must be a positive finite number"])
     # Identity recorded as the probe-lease holder. Defaults to the hostname so
     # `redis-cli get thump:probe-leader` names the replica that is probing;
     # override with THUMP_HOLDER when hostnames aren't distinct.

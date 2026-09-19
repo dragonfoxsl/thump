@@ -95,11 +95,16 @@ THUMP_SECRET=$(openssl rand -hex 32) docker compose up -d
 
 ### On Kubernetes
 
-[`deploy/kubernetes.yaml`](deploy/kubernetes.yaml) is a reference manifest: two thump replicas (sharing one Redis via the probe lease), a persistent Redis, `livenessProbe` on `/healthz` and `readinessProbe` on `/readyz`, and resource requests/limits.
+[`deploy/kubernetes.yaml`](deploy/kubernetes.yaml) is a reference manifest: two thump replicas, a persistent authenticated Redis, a Redis ingress NetworkPolicy, `livenessProbe` on `/healthz`, `readinessProbe` on `/readyz`, and resource requests/limits. The NetworkPolicy requires a CNI that enforces it; Redis authentication remains defense in depth.
+
+The thump Deployment uses `Recreate` so an upgrade never mixes binaries that write different persistent-state schemas. Expect a brief monitoring gap while the two application pods restart; Redis remains available throughout.
 
 ```bash
+REDIS_AUTH=*** rand -hex 32)"
 kubectl create secret generic thump-secret \
-  --from-literal=THUMP_SECRET="$(openssl rand -hex 32)"
+  --from-literal=THUMP_SECRET=*** rand -hex 32)" \
+  --from-literal=REDIS_AUTH=*** \
+  --from-literal=THUMP_REDIS_DSN="redis://:${REDIS_AUTH}@thump-redis:6379/0"
 kubectl apply -f deploy/kubernetes.yaml
 ```
 
@@ -245,7 +250,7 @@ uv sync --extra dev     # creates .venv from uv.lock
 uv run pytest           # real-Redis integration tests skip unless REDIS_URL is set
 ```
 
-`.python-version` pins 3.14 — the same version the container ships, so a green suite can't hide a break on the Python your users actually run.
+`.python-version` pins 3.14 — the same version the container ships. CI also runs the suite on Python 3.12, the declared compatibility floor.
 
 `uv.lock` is committed and the image builds with `uv sync --locked`, so the container gets the exact versions the tests ran against. CI uses `--locked` too, which fails if the lockfile has drifted from `pyproject.toml`. After changing a dependency, commit the regenerated lockfile.
 

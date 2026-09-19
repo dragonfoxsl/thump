@@ -23,7 +23,7 @@ checks:
     type: heartbeat
     interval: 24h
 """
-ENV = {"THUMP_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "test-secret-at-least-16-chars"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
 
 
@@ -115,6 +115,21 @@ async def test_probe_records_an_event(store):
     assert "500" in events[0].detail
 
 
+async def test_probe_does_not_read_response_body(store):
+    class ExplodingBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            raise AssertionError("response body was consumed")
+            yield b""  # pragma: no cover
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _req: httpx.Response(200, stream=ExplodingBody()))
+    )
+    cfg = parse_config(YAML, ENV)
+    sched = Scheduler(cfg, store, client, clock=lambda: T0)
+    assert await sched.probe_once(cfg.by_name["internal-payments-api"]) is True
+    await client.aclose()
+
+
 class _ExplodingStore:
     """Wraps a real store but raises a plain (non-StoreUnavailable) exception
     from record_success/record_failure, simulating an unexpected bug in the
@@ -147,6 +162,23 @@ class _DenyingLeaseStore:
         return getattr(self._inner, name)
 
 
+class _LeaseStore:
+    def __init__(self, inner, outcomes):
+        self._inner = inner
+        self.outcomes = iter(outcomes)
+        self.calls = 0
+
+    async def acquire_probe_lease(self, holder, ttl):
+        self.calls += 1
+        outcome = next(self.outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 class _StopLoop(Exception):
     """Breaks out of the otherwise-infinite _loop from an injected sleep."""
 
@@ -165,6 +197,54 @@ async def test_loop_does_not_probe_when_the_lease_is_denied(store):
         await task
 
     # Not the leader -> never reached out -> nothing observed.
+    assert (await store.get_state("internal-payments-api")).last_result_ok is None
+
+
+async def test_lease_loop_renews_independently_and_clears_leadership_on_error(store):
+    from thump.store.base import StoreUnavailable
+
+    cfg = parse_config(YAML, ENV)
+    lease_store = _LeaseStore(store, [True, StoreUnavailable("down")])
+    sleeps = []
+
+    async def sleep(delay):
+        sleeps.append(delay)
+        if len(sleeps) == 2:
+            raise _StopLoop
+
+    sched = Scheduler(cfg, lease_store, client_returning(200), lease_ttl=9, sleep=sleep)
+    with pytest.raises(_StopLoop):
+        await sched._lease_loop()
+    assert lease_store.calls == 2
+    assert sleeps == [3, 3]
+    assert sched._is_leader is False
+
+
+async def test_expired_local_lease_never_probes(store):
+    cfg = parse_config(YAML, ENV)
+    sleeps = []
+
+    async def stop_after_tick(delay):
+        sleeps.append(delay)
+        if len(sleeps) == 2:
+            raise _StopLoop
+
+    sched = Scheduler(
+        cfg,
+        store,
+        client_returning(200),
+        clock=lambda: T0,
+        jitter=lambda: 0.0,
+        monotonic=lambda: 10.0,
+        sleep=stop_after_tick,
+    )
+    sched._is_leader = True
+    sched._lease_deadline = 9.0
+
+    with pytest.raises(_StopLoop):
+        await sched._loop(cfg.by_name["internal-payments-api"])
+
+    assert sched._is_leader is False
     assert (await store.get_state("internal-payments-api")).last_result_ok is None
 
 
