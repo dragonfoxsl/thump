@@ -43,7 +43,7 @@ class Store(Protocol):
         writes. Redis backs a real lease (one holder at a time, expiring after
         `ttl` seconds so a dead leader is replaced). SQLite is single-replica
         by contract, so it grants unconditionally — there is no one to
-        coordinate with. Callers re-acquire each tick: the holder renews, a
-        follower is refused.
+        coordinate with. A process-wide scheduler task renews independently
+        of individual probe intervals; a follower is refused.
         """
         ...

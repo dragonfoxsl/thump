@@ -80,6 +80,39 @@ async def test_event_ring_buffer_is_trimmed_to_history(store):
     assert [e.detail for e in events] == ["e9", "e8", "e7"]
 
 
+async def test_stale_observation_does_not_change_state_but_remains_in_history(store):
+    newer = T0 + timedelta(minutes=1)
+    await store.record_failure("c", newer, Event(at=newer, kind="new"), 100)
+    await store.record_success("c", T0, Event(at=T0, kind="stale"), 100)
+
+    state = await store.get_state("c")
+    assert state.last_result_ok is False
+    assert state.consecutive_failures == 1
+    assert [event.kind for event in await store.get_events("c", 10)] == ["stale", "new"]
+
+
+async def test_stale_failure_cannot_overwrite_a_newer_success(store):
+    newer = T0 + timedelta(minutes=1)
+    await store.record_success("c", newer, Event(at=newer, kind="new"), 100)
+    await store.record_failure("c", T0, Event(at=T0, kind="stale"), 100)
+
+    state = await store.get_state("c")
+    assert state.last_result_ok is True
+    assert state.consecutive_failures == 0
+    assert state.last_seen == newer
+    assert [event.kind for event in await store.get_events("c", 10)] == ["stale", "new"]
+
+
+async def test_equal_timestamp_preserves_last_writer_behavior_and_history(store):
+    await store.record_failure("c", T0, Event(at=T0, kind="first"), 100)
+    await store.record_success("c", T0, Event(at=T0, kind="second"), 100)
+
+    state = await store.get_state("c")
+    assert state.last_result_ok is True
+    assert state.consecutive_failures == 0
+    assert [event.kind for event in await store.get_events("c", 10)] == ["second", "first"]
+
+
 async def test_events_are_isolated_per_check(store):
     await store.record_success("a", T0, Event(at=T0, kind="ping", detail="for-a"), 100)
     await store.record_success("b", T0, Event(at=T0, kind="ping", detail="for-b"), 100)

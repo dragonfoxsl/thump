@@ -20,9 +20,9 @@ checks:
     interval: 24h
 """
 NO_ADMIN_YAML = YAML.replace("  admin_token: ${THUMP_ADMIN_TOKEN}\n", "")
-ENV = {"THUMP_SECRET": "s3cret", "THUMP_ADMIN_TOKEN": "admin-tok"}
+ENV = {"THUMP_SECRET": "test-secret-at-least-16-chars", "THUMP_ADMIN_TOKEN": "admin-token-at-least-16-chars"}
 T0 = datetime(2026, 7, 15, 2, 0, tzinfo=timezone.utc)
-AUTH = {"Authorization": "Bearer admin-tok"}
+AUTH = {"Authorization": "Bearer admin-token-at-least-16-chars"}
 
 
 @pytest.fixture

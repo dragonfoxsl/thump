@@ -11,7 +11,7 @@ server:
   secret: ${THUMP_SECRET}              # HMAC root for derived ping tokens
   # admin_token: uncomment and reference the THUMP_ADMIN_TOKEN env var here
   # (see README) to enable /checks and /metrics; omit this key to disable them
-  timezone: UTC                         # display only; never affects evaluation
+  timezone: UTC                         # display and cron-schedule evaluation frame
 
 defaults:
   grace: 5m

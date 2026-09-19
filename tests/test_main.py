@@ -1,6 +1,7 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from thump.config import parse_config
+from thump.config import ConfigError, parse_config
 from thump.main import build_store
 from thump.store.redis import RedisStore
 from thump.store.sqlite import SqliteStore
@@ -13,7 +14,7 @@ checks:
     type: heartbeat
     interval: 24h
 """
-ENV = {"THUMP_SECRET": "s3cret"}
+ENV = {"THUMP_SECRET": "test-secret-at-least-16-chars"}
 
 
 def test_build_store_selects_sqlite():
@@ -40,3 +41,15 @@ def test_app_boots_end_to_end_and_serves_a_ping(tmp_path):
         token = app.state.config.by_name["nightly-db-backup"].token
         assert client.post(f"/ping/{token}").status_code == 200
         assert client.get("/status/nightly-db-backup").text == "up"
+
+
+@pytest.mark.parametrize("ttl", ["0", "-1", "nan", "inf", "nope"])
+def test_invalid_lease_ttl_is_a_clean_config_error(tmp_path, monkeypatch, ttl):
+    path = tmp_path / "config.yaml"
+    path.write_text(BASE.format(driver="sqlite", dsn=str(tmp_path / "s.db")))
+    monkeypatch.setenv("THUMP_LEASE_TTL", ttl)
+
+    from thump.main import create_app
+
+    with pytest.raises(ConfigError, match="THUMP_LEASE_TTL"):
+        create_app(str(path), env=ENV)

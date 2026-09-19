@@ -30,6 +30,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS check_state (
     name                 TEXT PRIMARY KEY,
     last_seen            TEXT,
+    observation_at       TEXT,
     last_result_ok       INTEGER,
     consecutive_failures INTEGER NOT NULL DEFAULT 0
 );
@@ -63,6 +64,24 @@ class SqliteStore:
             conn = self._open()
             try:
                 conn.executescript(_SCHEMA)
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(check_state)")}
+                if "observation_at" not in columns:
+                    conn.execute("ALTER TABLE check_state ADD COLUMN observation_at TEXT")
+                # Keep this outside the schema branch: SQLite may commit DDL
+                # before a process interruption. Retrying startup must still
+                # finish the idempotent data backfill.
+                conn.execute(
+                    """
+                    UPDATE check_state
+                       SET observation_at = COALESCE(
+                           (SELECT at FROM events
+                             WHERE events.name = check_state.name
+                             ORDER BY id DESC LIMIT 1),
+                           last_seen
+                       )
+                     WHERE observation_at IS NULL
+                    """
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -127,25 +146,33 @@ class SqliteStore:
                     if ok:
                         conn.execute(
                             """
-                            INSERT INTO check_state (name, last_seen, last_result_ok, consecutive_failures)
-                            VALUES (?, ?, 1, 0)
+                            INSERT INTO check_state
+                                (name, last_seen, observation_at, last_result_ok, consecutive_failures)
+                            VALUES (?, ?, ?, 1, 0)
                             ON CONFLICT(name) DO UPDATE SET
                                 last_seen = excluded.last_seen,
+                                observation_at = excluded.observation_at,
                                 last_result_ok = 1,
                                 consecutive_failures = 0
+                            WHERE check_state.observation_at IS NULL
+                               OR excluded.observation_at >= check_state.observation_at
                             """,
-                            (name, iso(at)),
+                            (name, iso(at), iso(at)),
                         )
                     else:
                         conn.execute(
                             """
-                            INSERT INTO check_state (name, last_seen, last_result_ok, consecutive_failures)
-                            VALUES (?, NULL, 0, 1)
+                            INSERT INTO check_state
+                                (name, last_seen, observation_at, last_result_ok, consecutive_failures)
+                            VALUES (?, NULL, ?, 0, 1)
                             ON CONFLICT(name) DO UPDATE SET
+                                observation_at = excluded.observation_at,
                                 last_result_ok = 0,
                                 consecutive_failures = check_state.consecutive_failures + 1
+                            WHERE check_state.observation_at IS NULL
+                               OR excluded.observation_at >= check_state.observation_at
                             """,
-                            (name,),
+                            (name, iso(at)),
                         )
                     conn.execute(
                         "INSERT INTO events (name, at, kind, detail) VALUES (?, ?, ?, ?)",

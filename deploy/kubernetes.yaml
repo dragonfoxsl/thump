@@ -1,7 +1,10 @@
 # Reference Kubernetes deployment: thump (2 replicas) + a persistent Redis.
 #
+#   REDIS_AUTH="$(openssl rand -hex 32)"
 #   kubectl create secret generic thump-secret \
-#     --from-literal=THUMP_SECRET="$(openssl rand -hex 32)"
+#     --from-literal=THUMP_SECRET="$(openssl rand -hex 32)" \
+#     --from-literal=REDIS_AUTH="$REDIS_AUTH" \
+#     --from-literal=THUMP_REDIS_DSN="redis://:${REDIS_AUTH}@thump-redis:6379/0"
 #   kubectl apply -f deploy/kubernetes.yaml
 #
 # Two thump replicas share one Redis, so state is consistent across pods and
@@ -16,7 +19,7 @@ data:
   config.yaml: |
     store:
       driver: redis
-      dsn: redis://thump-redis:6379/0
+      dsn: ${THUMP_REDIS_DSN}
     server:
       listen: ":8080"
       secret: ${THUMP_SECRET}          # substituted from the env var at boot
@@ -65,12 +68,23 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
+          command: ["sh", "-c"]
           args:
-            - redis-server
-            - --appendonly
-            - "yes"
-            - --maxmemory-policy
-            - noeviction
+            - |
+              set -eu
+              umask 077
+              printf 'appendonly yes\nmaxmemory-policy noeviction\nrequirepass %s\n' \
+                "$REDIS_AUTH" > /tmp/redis.conf
+              exec redis-server /tmp/redis.conf
+          env:
+            - name: REDIS_AUTH
+              valueFrom:
+                secretKeyRef: { name: thump-secret, key: REDIS_AUTH }
+            # redis-cli reads this automatically, keeping the credential out of
+            # probe arguments and process listings.
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef: { name: thump-secret, key: REDIS_AUTH }
           ports:
             - containerPort: 6379
           livenessProbe:
@@ -100,12 +114,31 @@ spec:
     - port: 6379
       targetPort: 6379
 ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: thump-redis-ingress
+spec:
+  podSelector:
+    matchLabels: { app: thump-redis }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: thump }
+      ports:
+        - { protocol: TCP, port: 6379 }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: thump
 spec:
   replicas: 2
+  # Observation ordering uses a persistence marker. Avoid mixing writers from
+  # either side of that migration boundary during upgrades.
+  strategy:
+    type: Recreate
   selector:
     matchLabels: { app: thump }
   template:
@@ -123,6 +156,11 @@ spec:
                 secretKeyRef:
                   name: thump-secret
                   key: THUMP_SECRET
+            - name: THUMP_REDIS_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: thump-secret
+                  key: THUMP_REDIS_DSN
           # Liveness: is the process serving? Never gate this on the store — a
           # Redis blip must not restart a healthy pod.
           livenessProbe:
