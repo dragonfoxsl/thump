@@ -1,0 +1,61 @@
+name: Thump Cloud design-partner interest
+description: Share the private-monitoring problem you want a managed Thump to solve.
+title: "[Cloud interest] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thump Cloud is a product direction, not an available service. This public issue helps us validate the problem before building it. Do not include credentials, private hostnames, IP addresses, or other sensitive infrastructure details.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to monitor?
+      description: Describe the type of jobs or private services and why your current uptime setup cannot see them.
+      placeholder: We operate scheduled jobs and internal HTTP services across...
+    validations:
+      required: true
+  - type: dropdown
+    id: environments
+    attributes:
+      label: How many private environments would need a connector?
+      options:
+        - "1"
+        - "2–5"
+        - "6–20"
+        - "More than 20"
+        - "Not sure yet"
+    validations:
+      required: true
+  - type: dropdown
+    id: checks
+    attributes:
+      label: Roughly how many checks would you start with?
+      options:
+        - "1–25"
+        - "26–100"
+        - "101–500"
+        - "More than 500"
+        - "Not sure yet"
+    validations:
+      required: true
+  - type: textarea
+    id: operations
+    attributes:
+      label: What part of self-hosting would you most like managed?
+      description: For example public ingress, TLS, persistence, upgrades, access control, audit history, or connector fleet visibility.
+    validations:
+      required: true
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Security, compliance, or deployment requirements
+      description: Keep this high-level and do not share confidential architecture details.
+  - type: checkboxes
+    id: relationship
+    attributes:
+      label: Design-partner expectations
+      options:
+        - label: I understand this is research for a planned product, not a request for an available service or a promised launch date.
+          required: true
+        - label: I am open to discussing this use case in this public issue.
+          required: true
