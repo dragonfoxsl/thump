@@ -20,11 +20,6 @@
   </a>
 </p>
 
-<p align="center">
-  <a href="https://dragonfoxsl.github.io/thump/">Website</a> ·
-  <a href="#installation">Installation</a>
-</p>
-
 <br>
 
 **thump** is a self-hosted monitor for the things your uptime vendor cannot see — cron jobs that silently never ran, and services on private networks it cannot reach. It runs *inside* your network, accepts heartbeats, probes private endpoints, and re-exposes both as plain `200`/`503` URLs your existing vendor already knows how to poll. It does the seeing; your vendor keeps doing the paging.
