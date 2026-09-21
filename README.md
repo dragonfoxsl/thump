@@ -22,8 +22,7 @@
 
 <p align="center">
   <a href="https://dragonfoxsl.github.io/thump/">Website</a> ·
-  <a href="#installation">Installation</a> ·
-  <a href="docs/COMMERCIAL_STRATEGY.md">Cloud product direction</a>
+  <a href="#installation">Installation</a>
 </p>
 
 <br>
